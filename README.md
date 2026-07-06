@@ -38,23 +38,48 @@ Board state lives under `.kanban_data/`, not a database:
 ```
 .kanban_data/
   To Do/
-    Write tests.md       <- filename = task title, contents = task description
+    Write tests.md       <- filename = task title, frontmatter + body = metadata + description
   In Progress/
+  Blocked/
   Done/
 ```
 
 Each column is a folder; each task is a `.md` file. Columns and tasks are created on demand —
-an empty `.kanban_data/` is a valid, empty board.
+an empty `.kanban_data/` is a valid, empty board. There are 4 columns: To Do, In Progress,
+Blocked, Done.
+
+Each task file has a small frontmatter block for metadata, followed by the description as plain
+text:
+
+```
+---
+id: KAN-05
+blocked_by: KAN-02
+---
+Task description goes here.
+```
+
+- `id` — a unique, auto-assigned identifier (`KAN-01`, `KAN-02`, ...). Assigned once at creation
+  and never changes, even when the task moves between columns.
+- `blocked_by` — set only while the task sits in the **Blocked** column; it names the task ID
+  that must complete first. Cleared automatically if the task moves out of Blocked.
+- The reverse link ("which tasks does this one block") is **not stored** — it's computed on
+  every read by scanning for tasks whose `blocked_by` points at this task's ID. That keeps the
+  two directions from ever going out of sync.
 
 ## API
 
-| Method | Path                       | Body                          | Description                       |
-|--------|----------------------------|-------------------------------|------------------------------------|
-| GET    | `/api/status`              | —                              | Health check                       |
-| GET    | `/api/tasks`                | —                              | All columns and their tasks        |
-| POST   | `/api/tasks`                 | `{column, title, description}` | Create a task                     |
-| PUT    | `/api/tasks/{task_id}/move`  | `{to_column}`                  | Move a task to another column      |
-| DELETE | `/api/tasks/{task_id}`       | —                               | Delete a task                      |
+| Method | Path                       | Body                                       | Description                       |
+|--------|----------------------------|---------------------------------------------|------------------------------------|
+| GET    | `/api/status`              | —                                             | Health check                       |
+| GET    | `/api/tasks`                | —                                             | All columns and their tasks        |
+| POST   | `/api/tasks`                 | `{column, title, description, blocked_by?}` | Create a task                     |
+| PUT    | `/api/tasks/{task_id}/move`  | `{to_column, blocked_by?}`                   | Move a task to another column      |
+| DELETE | `/api/tasks/{task_id}`       | —                                             | Delete a task                      |
 
-`task_id` is `"<column>::<title>"` (e.g. `"To Do::Write tests"`), returned by `GET`/`POST` and
-passed back as-is to `move`/`delete`.
+`task_id` is the task's own unique ID (e.g. `"KAN-05"`) — stable across moves, returned by
+`GET`/`POST` and passed back as-is to `move`/`delete`.
+
+`blocked_by` is **required** when `column`/`to_column` is `"Blocked"` and must reference an
+existing task ID (not itself); the API returns `400` otherwise. Each task in the response also
+carries a computed `"blocks"` array — the IDs of tasks currently blocked by it.

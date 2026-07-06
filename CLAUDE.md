@@ -11,19 +11,28 @@ plain Markdown files under `.kanban_data/`.
 ## Architecture
 
 - `backend/storage.py` — filesystem data layer. Each column is a directory under
-  `.kanban_data/`; each task is a `<title>.md` file whose contents are the description.
-  Functions: `get_all_boards`, `add_task`, `update_task`, `move_task`, `delete_task`,
-  `sanitize_name`. Column/task names are sanitized for filesystem-unsafe characters
-  (`sanitize_name`) before touching disk — colons are stripped, which the API layer relies on
-  (see below).
+  `.kanban_data/`; each task is a `<title>.md` file with a small frontmatter block (`id`,
+  `blocked_by`) followed by the description as the body. Functions: `get_all_boards`, `add_task`,
+  `update_task`, `move_task`, `delete_task`, `sanitize_name`. Column/task names are sanitized for
+  filesystem-unsafe characters (`sanitize_name`) before touching disk.
 - `backend/main.py` — FastAPI app. REST endpoints under `/api/tasks`, CORS wide open
   (`allow_origins=["*"]`, fine for a local-only app). Mounts `frontend/` as static files at `/`
   (must stay mounted *last* so it doesn't shadow the API routes).
-- Tasks have no numeric ID. The API synthesizes `task_id` as `"<column>::<title>"`. This only
-  works because `sanitize_name` strips `:` from stored names, so `::` is an unambiguous
-  delimiter. If you ever change what characters are sanitized, re-check this assumption.
+- Tasks have a real, stable unique ID (`KAN-01`, `KAN-02`, ...) assigned once at creation by
+  `storage._next_id`, which scans all existing task files and takes `max(id) + 1` — there's no
+  separate counter file, the files themselves are the source of truth. `task_id` throughout the
+  API *is* this ID, not a synthetic composite, so it stays valid across moves/renames.
+- Blocking: a task in the `Blocked` column (`storage.BLOCKED_COLUMN`) must carry `blocked_by`
+  pointing at another existing task's ID (validated by `storage._validate_blocker` — no
+  self-blocking, blocker must exist). The reverse `"blocks"` list is **computed on every read**
+  in `get_all_boards`, not stored — don't add a stored/denormalized version of it, that would let
+  the two directions drift out of sync.
 - `frontend/app.js` — no build tooling, no framework. Talks to the API with `fetch`. Drag-and-drop
-  calls the move endpoint; the delete button on each card calls the delete endpoint.
+  calls the move endpoint; dropping onto the Blocked column opens a small modal to collect the
+  blocker ID first. The delete button on each card calls the delete endpoint. Errors from the API
+  surface via a toast (`showError`) — **never use `alert()`/`confirm()` here**: they block the JS
+  thread, and in at least one automated browser context that hung the page outright (Chrome
+  DevTools Protocol couldn't dispatch further events until the dialog was dismissed).
 
 ## Running things
 

@@ -30,6 +30,15 @@
       <button class="add-task-btn" data-column="In Progress">+ Add Task</button>
     </section>
 
+    <section class="column" data-column="Blocked">
+      <div class="column-header">
+        <h2>Blocked</h2>
+        <span class="count" id="count-Blocked">0</span>
+      </div>
+      <div class="task-list" data-column="Blocked"></div>
+      <button class="add-task-btn" data-column="Blocked">+ Add Task</button>
+    </section>
+
     <section class="column" data-column="Done">
       <div class="column-header">
         <h2>Done</h2>
@@ -54,8 +63,14 @@
         <select id="task-column">
           <option value="To Do">To Do</option>
           <option value="In Progress">In Progress</option>
+          <option value="Blocked">Blocked</option>
           <option value="Done">Done</option>
         </select>
+
+        <div id="task-blocked-by-field" class="hidden">
+          <label for="task-blocked-by">Blocked by (task ID)</label>
+          <input type="text" id="task-blocked-by" placeholder="e.g. KAN-02" />
+        </div>
 
         <div class="modal-actions">
           <button type="button" class="btn-secondary" id="modal-cancel">Cancel</button>
@@ -64,6 +79,23 @@
       </form>
     </div>
   </div>
+
+  <div class="modal-overlay" id="block-modal-overlay">
+    <div class="modal">
+      <h3>Block Task</h3>
+      <form id="block-form">
+        <label for="block-blocker-id">Blocked by (task ID)</label>
+        <input type="text" id="block-blocker-id" required placeholder="e.g. KAN-02" />
+
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" id="block-modal-cancel">Cancel</button>
+          <button type="submit" class="btn-primary">Confirm</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="toast" id="error-toast"></div>
 
   <script src="app.js"></script>
 </body>
