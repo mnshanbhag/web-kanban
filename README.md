@@ -1,7 +1,7 @@
 # CanBan
 
-A local Kanban board. FastAPI backend, vanilla JS/HTML/CSS frontend, tasks stored as plain
-Markdown files on disk — no database.
+A local Kanban board. FastAPI backend, vanilla JS/HTML/CSS frontend, tasks stored in a local
+SQLite database via SQLAlchemy, request/response shapes validated with Pydantic.
 
 ## Setup
 
@@ -33,54 +33,38 @@ python -m pytest
 
 ## How data is stored
 
-Board state lives under `.kanban_data/`, not a database:
+Board state lives in a single SQLite database file, `.kanban_data/kanban.db`, defined via
+SQLAlchemy ORM in `backend/storage.py` (a single `tasks` table — see the `Task` model). There's
+no migration tooling; the schema is created on first run via `Base.metadata.create_all()`.
 
-```
-.kanban_data/
-  To Do/
-    Write tests.md       <- filename = task title, frontmatter + body = metadata + description
-  In Progress/
-  Blocked/
-  Done/
-```
+Each row has: `id` (integer primary key), `title`, `description`, `column`, `priority`,
+`blocked_by_id` (a self-referential foreign key), and `deleted_at`.
 
-Each column is a folder; each task is a `.md` file. Columns and tasks are created on demand —
-an empty `.kanban_data/` is a valid, empty board. There are 4 columns: To Do, In Progress,
-Blocked, Done.
-
-Each task file has a small frontmatter block for metadata, followed by the description as plain
-text:
-
-```
----
-id: KAN-05
-blocked_by: KAN-02
-priority: High
----
-Task description goes here.
-```
-
-- `id` — a unique, auto-assigned identifier (`KAN-01`, `KAN-02`, ...). Assigned once at creation
-  and never changes, even when the task moves between columns. IDs are **never reused**, even
-  across a permanent delete or an emptied trash — see "Recycle bin" below.
-- `blocked_by` — set only while the task sits in the **Blocked** column; it names the task ID
-  that must complete first. Cleared automatically if the task moves out of Blocked.
-- `priority` — one of `Low` / `Medium` / `High` / `Urgent`, defaulting to `Medium` if omitted at
-  creation. Carried through unchanged across moves, blocking, and the recycle bin.
-- The reverse link ("which tasks does this one block") is **not stored** — it's computed on
-  every read by scanning for tasks whose `blocked_by` points at this task's ID. That keeps the
-  two directions from ever going out of sync.
+- **`id`** is exposed over the API as `"KAN-01"`, `"KAN-02"`, ... (`f"KAN-{id:02d}"`). It's never
+  reused: the table uses SQLite's `AUTOINCREMENT` (`sqlite_autoincrement=True`), which guarantees
+  the next inserted row's id is always higher than any id the table has ever held, even after a
+  row is deleted.
+- **`column`** is just a string (`"To Do"`, `"In Progress"`, `"Blocked"`, `"Done"`) — there's no
+  separate columns table. A column "exists" only in the sense that some task currently has that
+  value; an empty board has no rows and therefore reports no columns at all (the frontend already
+  renders its 4 fixed columns regardless of what the API returns, so this isn't user-visible).
+- **`blocked_by_id`** is a foreign key back onto `tasks.id`, with `ON DELETE SET NULL`: if a
+  blocker task is ever permanently deleted, every task that pointed at it is automatically
+  unblocked at the database level rather than being left with a dangling reference.
+- **`blocks`** (which tasks does this one block) is **not a column** — it's the SQLAlchemy
+  `backref` of the `blocked_by` relationship, computed by the ORM on read.
+- **`priority`** is one of `Low` / `Medium` / `High` / `Urgent`, defaulting to `Medium`.
+- **`deleted_at`** is `NULL` for an active task. Setting it is the entire "soft delete"
+  mechanism — the row never moves or changes shape, so restoring is just clearing it back to
+  `NULL`. There's no separate `deleted_from` field like an older file-based version of this app
+  had; the row's `column` was never touched by the delete in the first place.
 
 ### Recycle bin
 
-Deleting a task doesn't remove it — it's a soft delete. The task's file moves to
-`.kanban_data/.trash/<id>.md`, gaining `title` and `deleted_from` frontmatter fields (so it can
-be restored to the column it came from) plus a `deleted_at` timestamp. `.trash/` is excluded from
-the normal board view.
-
-Task IDs are tracked by a persistent counter file (`.kanban_data/.id_counter`) rather than by
-scanning for the current max ID on disk — scanning would let a deleted task's ID get handed to a
-new task once the old file was gone.
+Deleting a task sets `deleted_at` instead of removing the row. `GET /api/tasks` and the `blocks`
+computation both filter to `deleted_at IS NULL`; `GET /api/trash` filters to `deleted_at IS NOT
+NULL`. Restoring just clears the timestamp. Permanently deleting (or emptying the trash) is a
+real `DELETE FROM tasks WHERE ...`.
 
 ## API
 
