@@ -1,11 +1,15 @@
 const API_BASE = "/api";
 const COLUMNS = ["To Do", "In Progress", "Done"];
 
+const DEFAULT_PRIORITY = "Medium";
+const PRIORITIES = ["Low", "Medium", "High", "Urgent"];
+
 const modalOverlay = document.getElementById("modal-overlay");
 const taskForm = document.getElementById("task-form");
 const titleInput = document.getElementById("task-title");
 const descriptionInput = document.getElementById("task-description");
 const columnSelect = document.getElementById("task-column");
+const priorityInput = document.getElementById("task-priority");
 
 async function loadBoard() {
   const res = await fetch(`${API_BASE}/tasks`);
@@ -33,6 +37,7 @@ function createCardElement(column, task) {
   card.draggable = true;
   card.dataset.id = task.id;
   card.dataset.column = column;
+  card.dataset.priority = task.priority || DEFAULT_PRIORITY;
 
   const title = document.createElement("p");
   title.className = "card-title";
@@ -45,6 +50,27 @@ function createCardElement(column, task) {
     description.textContent = task.description;
     card.appendChild(description);
   }
+
+  const prioritySelect = document.createElement("select");
+  prioritySelect.className = "priority-pill";
+  prioritySelect.draggable = false;
+  const priority = task.priority || DEFAULT_PRIORITY;
+  prioritySelect.dataset.priority = priority;
+  for (const level of PRIORITIES) {
+    const option = document.createElement("option");
+    option.value = level;
+    option.textContent = level;
+    option.selected = level === priority;
+    prioritySelect.appendChild(option);
+  }
+  prioritySelect.addEventListener("mousedown", (event) => event.stopPropagation());
+  prioritySelect.addEventListener("click", (event) => event.stopPropagation());
+  prioritySelect.addEventListener("change", () => {
+    prioritySelect.dataset.priority = prioritySelect.value;
+    card.dataset.priority = prioritySelect.value;
+    setPriority(task.id, prioritySelect.value);
+  });
+  card.appendChild(prioritySelect);
 
   const deleteBtn = document.createElement("button");
   deleteBtn.className = "card-delete";
@@ -64,11 +90,20 @@ function createCardElement(column, task) {
   return card;
 }
 
-async function createTask(column, title, description) {
+async function createTask(column, title, description, priority) {
   await fetch(`${API_BASE}/tasks`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ column, title, description }),
+    body: JSON.stringify({ column, title, description, priority }),
+  });
+  await loadBoard();
+}
+
+async function setPriority(taskId, priority) {
+  await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/priority`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ priority }),
   });
   await loadBoard();
 }
@@ -91,6 +126,7 @@ function openModal(column) {
   columnSelect.value = column;
   titleInput.value = "";
   descriptionInput.value = "";
+  priorityInput.value = DEFAULT_PRIORITY;
   modalOverlay.classList.add("open");
   titleInput.focus();
 }
@@ -117,7 +153,7 @@ taskForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const title = titleInput.value.trim();
   if (!title) return;
-  await createTask(columnSelect.value, title, descriptionInput.value.trim());
+  await createTask(columnSelect.value, title, descriptionInput.value.trim(), priorityInput.value);
   closeModal();
 });
 

@@ -24,10 +24,15 @@ class TaskCreate(BaseModel):
     column: str
     title: str
     description: str = ""
+    priority: str = storage.DEFAULT_PRIORITY
 
 
 class TaskMove(BaseModel):
     to_column: str
+
+
+class TaskPriorityUpdate(BaseModel):
+    priority: str
 
 
 def _make_task_id(column: str, title: str) -> str:
@@ -58,12 +63,24 @@ def list_tasks():
 @app.post("/api/tasks", status_code=201)
 def create_task(task: TaskCreate):
     try:
-        storage.add_task(task.column, task.title, task.description)
+        storage.add_task(task.column, task.title, task.description, task.priority)
     except FileExistsError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"id": _make_task_id(task.column, task.title)}
+
+
+@app.put("/api/tasks/{task_id}/priority")
+def set_priority(task_id: str, body: TaskPriorityUpdate):
+    column, title = _parse_task_id(task_id)
+    try:
+        storage.update_task(column, title, new_priority=body.priority)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"id": task_id, "priority": body.priority}
 
 
 @app.put("/api/tasks/{task_id}/move")

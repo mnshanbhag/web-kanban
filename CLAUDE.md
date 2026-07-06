@@ -11,19 +11,36 @@ plain Markdown files under `.kanban_data/`.
 ## Architecture
 
 - `backend/storage.py` — filesystem data layer. Each column is a directory under
-  `.kanban_data/`; each task is a `<title>.md` file whose contents are the description.
-  Functions: `get_all_boards`, `add_task`, `update_task`, `move_task`, `delete_task`,
-  `sanitize_name`. Column/task names are sanitized for filesystem-unsafe characters
-  (`sanitize_name`) before touching disk — colons are stripped, which the API layer relies on
-  (see below).
+  `.kanban_data/`; each task is a `<title>.md` file with a small frontmatter block (currently
+  just `priority`) followed by the description as the body. Functions: `get_all_boards`,
+  `add_task`, `update_task`, `move_task`, `delete_task`, `sanitize_name`. Column/task names are
+  sanitized for filesystem-unsafe characters (`sanitize_name`) before touching disk — colons are
+  stripped, which the API layer relies on (see below).
 - `backend/main.py` — FastAPI app. REST endpoints under `/api/tasks`, CORS wide open
   (`allow_origins=["*"]`, fine for a local-only app). Mounts `frontend/` as static files at `/`
   (must stay mounted *last* so it doesn't shadow the API routes).
 - Tasks have no numeric ID. The API synthesizes `task_id` as `"<column>::<title>"`. This only
   works because `sanitize_name` strips `:` from stored names, so `::` is an unambiguous
   delimiter. If you ever change what characters are sanitized, re-check this assumption.
+- Priority: `storage.PRIORITIES = ("Low", "Medium", "High", "Urgent")`, default
+  `storage.DEFAULT_PRIORITY = "Medium"`. Validated by `storage._validate_priority` on both create
+  and update — invalid values raise `ValueError`, which `main.py` turns into a `400`.
 - `frontend/app.js` — no build tooling, no framework. Talks to the API with `fetch`. Drag-and-drop
-  calls the move endpoint; the delete button on each card calls the delete endpoint.
+  calls the move endpoint; the delete button on each card calls the delete endpoint. Each card's
+  priority is an inline `<select class="priority-pill">` — colored via CSS
+  `[data-priority="..."]` attribute selectors on both the pill and the card's left border. It has
+  `draggable = false` and stops `mousedown`/`click` propagation so interacting with it doesn't
+  fight the card's own HTML5 drag-and-drop.
+
+## Branch note
+
+This frontmatter approach (`backend/storage._parse_task_content` /
+`_render_task_content`) was introduced independently on this branch (`feature_priority`) to store
+`priority`. A sibling branch, `feature_blocked_col`, introduced the *same* frontmatter mechanism
+independently to store a task `id` and `blocked_by`. **These will conflict when merged** — the
+fix is to combine both schemes into one frontmatter block (`id`, `priority`, `blocked_by`) rather
+than picking one side, and reconcile `get_all_boards()`/`add_task()`/`update_task()` to carry all
+three fields.
 
 ## Running things
 
