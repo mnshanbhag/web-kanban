@@ -3,12 +3,40 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Kanban Board</title>
+  <meta name="theme-color" content="#0c0b10" />
+  <title>CanBan</title>
+  <script>
+    document.documentElement.dataset.theme = localStorage.getItem("canban-theme") || "dark";
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Sora:wght@600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <header class="topbar">
-    <h1>Kanban Board</h1>
+    <div class="brand-group">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none">
+            <rect x="2.5" y="2.5" width="6" height="19" rx="2" fill="white" fill-opacity="0.95"/>
+            <rect x="9.5" y="2.5" width="6" height="12" rx="2" fill="white" fill-opacity="0.65"/>
+            <rect x="16.5" y="2.5" width="5" height="16" rx="2" fill="white" fill-opacity="0.4"/>
+          </svg>
+        </span>
+        <h1>Can<span class="brand-accent">Ban</span></h1>
+      </div>
+      <p class="brand-tagline">Flow, refined.</p>
+    </div>
+    <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Switch theme" title="Switch theme">
+      <svg class="theme-icon theme-icon-sun" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="4"></circle>
+        <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path>
+      </svg>
+      <svg class="theme-icon theme-icon-moon" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+      </svg>
+    </button>
   </header>
 
   <main class="board" id="board">

@@ -20,6 +20,8 @@ const blockBlockerIdInput = document.getElementById("block-blocker-id");
 
 const errorToast = document.getElementById("error-toast");
 
+const themeToggle = document.getElementById("theme-toggle");
+
 const trashFab = document.getElementById("trash-fab");
 const trashBadge = document.getElementById("trash-badge");
 const trashModalOverlay = document.getElementById("trash-modal-overlay");
@@ -374,6 +376,13 @@ document.getElementById("block-modal-cancel").addEventListener("click", closeBlo
 
 blockModalOverlay.addEventListener("click", (event) => {
   if (event.target === blockModalOverlay) closeBlockModal();
+});
+
+themeToggle.addEventListener("click", () => {
+  const root = document.documentElement;
+  const next = root.dataset.theme === "dark" ? "light" : "dark";
+  root.dataset.theme = next;
+  localStorage.setItem("canban-theme", next);
 });
 
 trashFab.addEventListener("click", openTrashModal);

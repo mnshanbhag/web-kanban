@@ -11,7 +11,7 @@ from backend import storage
 BASE_DIR = Path(__file__).resolve().parent.parent
 FRONTEND_DIR = BASE_DIR / "frontend"
 
-app = FastAPI(title="Kanban App")
+app = FastAPI(title="CanBan")
 
 app.add_middleware(
     CORSMiddleware,

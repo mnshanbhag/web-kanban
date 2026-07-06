@@ -1,4 +1,4 @@
-# Web Kanban
+# CanBan
 
 A local Kanban board. FastAPI backend, vanilla JS/HTML/CSS frontend, tasks stored as plain
 Markdown files on disk — no database.
