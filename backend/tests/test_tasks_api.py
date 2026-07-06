@@ -16,7 +16,7 @@ async def client():
         yield ac
 
 
-async def test_post_writes_markdown_file_and_get_reads_it_back(client, tmp_path):
+async def test_post_persists_task_to_sqlite_and_get_reads_it_back(client, tmp_path):
     response = await client.post(
         "/api/tasks",
         json={
@@ -30,12 +30,15 @@ async def test_post_writes_markdown_file_and_get_reads_it_back(client, tmp_path)
     task_id = response.json()["id"]
     assert task_id == "KAN-01"
 
-    task_file = tmp_path / "To Do" / "Write tests.md"
-    assert task_file.is_file()
-    content = task_file.read_text(encoding="utf-8")
-    assert "id: KAN-01" in content
-    assert "priority: Medium" in content
-    assert content.endswith("Cover the API with pytest and httpx.")
+    assert (tmp_path / "kanban.db").is_file()
+    with storage._session() as session:
+        row = session.get(storage.Task, 1)
+        assert row is not None
+        assert row.title == "Write tests"
+        assert row.description == "Cover the API with pytest and httpx."
+        assert row.column == "To Do"
+        assert row.priority == "Medium"
+        assert row.deleted_at is None
 
     get_response = await client.get("/api/tasks")
 
@@ -134,7 +137,7 @@ async def test_update_priority_with_invalid_value_is_rejected(client):
     assert response.status_code == 400
 
 
-async def test_delete_moves_task_to_trash_instead_of_removing_it(client, tmp_path):
+async def test_delete_soft_deletes_instead_of_removing_the_row(client):
     kan_1 = (
         await client.post(
             "/api/tasks",
@@ -145,8 +148,10 @@ async def test_delete_moves_task_to_trash_instead_of_removing_it(client, tmp_pat
     delete_response = await client.delete(f"/api/tasks/{kan_1}")
     assert delete_response.status_code == 204
 
-    assert not (tmp_path / "To Do" / "Doomed task.md").exists()
-    assert (tmp_path / ".trash" / f"{kan_1}.md").is_file()
+    with storage._session() as session:
+        row = session.get(storage.Task, 1)
+        assert row is not None
+        assert row.deleted_at is not None
 
     board = (await client.get("/api/tasks")).json()
     assert board.get("To Do", []) == []
@@ -162,6 +167,19 @@ async def test_delete_moves_task_to_trash_instead_of_removing_it(client, tmp_pat
             "deleted_at": trash[0]["deleted_at"],
         }
     ]
+
+
+async def test_trash_deleted_at_is_timezone_aware(client):
+    kan_1 = (await client.post("/api/tasks", json={"column": "To Do", "title": "X"})).json()["id"]
+    await client.delete(f"/api/tasks/{kan_1}")
+
+    trash = (await client.get("/api/trash")).json()
+    deleted_at = trash[0]["deleted_at"]
+
+    from datetime import datetime
+
+    parsed = datetime.fromisoformat(deleted_at)
+    assert parsed.tzinfo is not None
 
 
 async def test_restore_puts_task_back_in_its_original_column(client):
@@ -192,7 +210,7 @@ async def test_restored_task_keeps_its_priority(client):
     assert board["To Do"][0]["priority"] == "Urgent"
 
 
-async def test_permanent_delete_removes_task_from_trash(client, tmp_path):
+async def test_permanent_delete_removes_the_row_entirely(client):
     kan_1 = (
         await client.post("/api/tasks", json={"column": "To Do", "title": "Gone forever"})
     ).json()["id"]
@@ -202,7 +220,8 @@ async def test_permanent_delete_removes_task_from_trash(client, tmp_path):
     assert response.status_code == 204
 
     assert (await client.get("/api/trash")).json() == []
-    assert not (tmp_path / ".trash" / f"{kan_1}.md").exists()
+    with storage._session() as session:
+        assert session.get(storage.Task, 1) is None
 
 
 async def test_empty_trash_removes_all_trashed_tasks(client):
@@ -233,3 +252,21 @@ async def test_permanently_deleted_id_is_never_reused(client):
 
     assert kan_2 == "KAN-02"
     assert kan_2 != kan_1
+
+
+async def test_permanently_deleting_a_blocker_nulls_out_dependents(client):
+    kan_1 = (
+        await client.post("/api/tasks", json={"column": "To Do", "title": "Blocker"})
+    ).json()["id"]
+    kan_2 = (
+        await client.post("/api/tasks", json={"column": "To Do", "title": "Dependent"})
+    ).json()["id"]
+    await client.put(f"/api/tasks/{kan_2}/move", json={"to_column": "Blocked", "blocked_by": kan_1})
+
+    await client.delete(f"/api/tasks/{kan_1}")
+    await client.delete(f"/api/trash/{kan_1}")
+
+    board = (await client.get("/api/tasks")).json()
+    dependent = board["Blocked"][0]
+    assert dependent["id"] == kan_2
+    assert dependent["blocked_by"] is None

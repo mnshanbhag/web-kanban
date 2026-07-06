@@ -5,47 +5,59 @@ Guidance for Claude Code when working in this repository.
 ## Project
 
 Local Kanban board. FastAPI backend (`backend/`), vanilla JS/HTML/CSS frontend (`frontend/`,
-served as static files by the backend — no build step, no bundler). No database: task data is
-plain Markdown files under `.kanban_data/`.
+served as static files by the backend — no build step, no bundler). Task data lives in a local
+SQLite database (`.kanban_data/kanban.db`) via SQLAlchemy; request/response bodies are validated
+with Pydantic (`backend/schemas.py`).
 
 ## Architecture
 
-- `backend/storage.py` — filesystem data layer. Each column is a directory under
-  `.kanban_data/`; each task is a `<title>.md` file with a small frontmatter block (`id`,
-  `blocked_by`, `priority`) followed by the description as the body. Functions:
-  `get_all_boards`, `add_task`, `update_task`, `move_task`, `delete_task`, `sanitize_name`.
-  Column/task names are sanitized for filesystem-unsafe characters (`sanitize_name`) before
-  touching disk.
+- `backend/storage.py` — the persistence layer. Defines the SQLAlchemy `Task` ORM model
+  (`__tablename__ = "tasks"`) and every CRUD function: `get_all_boards`, `add_task`,
+  `update_task`, `move_task`, `delete_task`, `get_trash`, `restore_task`,
+  `permanent_delete_task`, `empty_trash`. Each function opens its own `Session` via `_session()`
+  (which lazily creates the engine/DB file and runs `create_all` — cheap and idempotent, fine for
+  a local single-user app; don't bother caching the engine).
+- `backend/schemas.py` — Pydantic request/response models (`TaskCreate`, `TaskMove`,
+  `TaskPriorityUpdate`, `TaskOut`, `TrashedTaskOut`, etc.), imported by `main.py` and wired up via
+  FastAPI's `response_model=` on every endpoint — this is what actually validates/shapes what the
+  API returns, not just what it accepts.
 - `backend/main.py` — FastAPI app. REST endpoints under `/api/tasks`, CORS wide open
   (`allow_origins=["*"]`, fine for a local-only app). Mounts `frontend/` as static files at `/`
   (must stay mounted *last* so it doesn't shadow the API routes).
-- Tasks have a real, stable unique ID (`KAN-01`, `KAN-02`, ...) assigned once at creation by
-  `storage._next_id`. **IDs are never reused** — `_next_id` reads/writes a persistent counter
-  file (`.kanban_data/.id_counter`), it does *not* scan for the current max ID on disk. Do not
-  "simplify" this back to a disk scan — that would let a permanently-deleted task's ID get
-  reassigned to the next new task, which is the one invariant this whole feature exists to
-  protect. `task_id` throughout the API *is* this ID, not a synthetic composite, so it stays
-  valid across moves/renames.
-- Blocking: a task in the `Blocked` column (`storage.BLOCKED_COLUMN`) must carry `blocked_by`
-  pointing at another existing task's ID (validated by `storage._validate_blocker` — no
-  self-blocking, blocker must exist). The reverse `"blocks"` list is **computed on every read**
-  in `get_all_boards`, not stored — don't add a stored/denormalized version of it, that would let
-  the two directions drift out of sync.
+- Tasks have a real, stable unique ID assigned once at creation, exposed over the API as
+  `"KAN-01"`, `"KAN-02"`, ... (`storage._display_id(pk)` / `storage._parse_id(task_id)` convert
+  between the display string and the real integer primary key). **IDs are never reused** — this
+  is enforced by SQLite's `AUTOINCREMENT` (`Task.__table_args__ = {"sqlite_autoincrement": True}`),
+  not by any counter file or max-id scan. Do not remove that table arg; without it SQLite's
+  default ROWID reuse behavior could hand a deleted task's id to a new one.
+- Blocking: a task in the `Blocked` column (`storage.BLOCKED_COLUMN`) must carry `blocked_by_id`
+  pointing at another existing, non-trashed task (validated by `storage._validate_blocker` — no
+  self-blocking, blocker must exist). This is a real self-referential foreign key
+  (`ForeignKey("tasks.id", ondelete="SET NULL")`) with FK enforcement turned on for every SQLite
+  connection via the `Engine "connect"` event listener (`PRAGMA foreign_keys=ON` — SQLite doesn't
+  enforce FKs by default). Permanently deleting a blocker therefore auto-nulls `blocked_by_id` on
+  every task that referenced it — an actual improvement over the old file-based version, which
+  just left a dangling string reference. The reverse `"blocks"` list is the SQLAlchemy `backref`
+  of that relationship, computed by the ORM on read — still not a stored/denormalized column,
+  don't add one.
 - Priority: `storage.PRIORITIES = ("Low", "Medium", "High", "Urgent")`, default
   `storage.DEFAULT_PRIORITY = "Medium"`. Validated by `storage._validate_priority` on both create
   and update (`PUT /api/tasks/{task_id}/priority`) — invalid values raise `ValueError`, which
-  `main.py` turns into a `400`. Priority is preserved across moves, blocking, and through the
-  recycle bin (soft delete and restore) automatically, since it's just another key in the same
-  frontmatter dict that every one of those operations already carries through untouched — don't
-  special-case it anywhere.
-- Recycle bin: `delete_task` is a **soft delete** — it moves the task's file into
-  `.kanban_data/.trash/<id>.md` (filename is the ID, not the title, since trash can hold tasks
-  that once shared a title with something else) and stamps `title`/`deleted_from`/`deleted_at`
-  onto its frontmatter. `_iter_task_files` and `get_all_boards` explicitly exclude
-  `storage.TRASH_DIRNAME` so trashed tasks never leak into the normal board view or the `blocks`
-  computation. `restore_task` reads `deleted_from` to know which column to put it back in;
-  `permanent_delete_task`/`empty_trash` are the only functions that actually `unlink()` a task
-  file for good.
+  `main.py` turns into a `400`.
+- Recycle bin: `delete_task` is a **soft delete** — it just sets `Task.deleted_at`. The row's
+  `column` is never touched, so restoring is only ever "clear `deleted_at` back to `NULL`"; there
+  is deliberately no separate `deleted_from` field the way an earlier file-based version of this
+  app needed (that field existed only because deleting used to *move a file*, which no longer
+  happens). `get_all_boards`/`get_trash` filter on `deleted_at IS NULL` / `IS NOT NULL`
+  respectively. `permanent_delete_task`/`empty_trash` are the only functions that actually
+  `session.delete(...)` a row.
+- **SQLite datetime gotcha**: SQLAlchemy's `DateTime` column silently drops tzinfo on
+  SQLite round-trips (a value written as `datetime.now(timezone.utc)` comes back naive). Every
+  value this app ever writes to `deleted_at` *is* UTC, so `storage._utc_isoformat()` re-attaches
+  `timezone.utc` before calling `.isoformat()` — this is the only thing standing between a
+  correct "deleted just now" and the frontend's `formatRelativeTime` silently being off by your
+  local UTC offset. If you add another datetime column, route it through the same helper (or an
+  equivalent) before it reaches the API.
 - `frontend/app.js` — no build tooling, no framework. Talks to the API with `fetch`. Drag-and-drop
   calls the move endpoint; dropping onto the Blocked column opens a small modal to collect the
   blocker ID first. Each card's priority is an inline `<select class="priority-pill">` — colored
@@ -69,15 +81,19 @@ python -m uvicorn backend.main:app --reload
 (also the "backend" config in `.claude/launch.json`, usable via the preview tool).
 
 Tests: `python -m pytest` (needs `requirements-dev.txt` installed — adds pytest,
-pytest-asyncio, httpx on top of `requirements.txt`). `pytest.ini` sets `asyncio_mode = auto` so
-async tests don't need `@pytest.mark.asyncio`.
+pytest-asyncio, httpx on top of `requirements.txt`, which itself now includes SQLAlchemy).
+`pytest.ini` sets `asyncio_mode = auto` so async tests don't need `@pytest.mark.asyncio`.
 
 ## Conventions / gotchas
 
 - Tests must not touch the real `.kanban_data/` — monkeypatch `storage.DATA_DIR` to a `tmp_path`
-  (see `backend/tests/test_tasks_api.py` for the pattern). Never assert against or clean up the
+  (see `backend/tests/test_tasks_api.py` for the pattern); this redirects the SQLite file, not
+  just markdown files, so the pattern still works unchanged. Never assert against or clean up the
   project's real `.kanban_data/` from a test.
 - API tests use `httpx.AsyncClient` with `httpx.ASGITransport(app=main.app)` — no real server
-  needs to be running for tests.
+  needs to be running for tests. To inspect persisted rows directly in a test, open a session
+  with `storage._session()` and `session.get(storage.Task, <int pk>)` (note: the *integer* pk,
+  not the `"KAN-NN"` display string).
 - When manually smoke-testing endpoints against the real dev server, clean up any tasks/columns
-  you create afterward so `.kanban_data/` doesn't accumulate throwaway data.
+  you create afterward so `.kanban_data/kanban.db` doesn't accumulate throwaway data (or just
+  delete the file — it's recreated automatically on next run).
