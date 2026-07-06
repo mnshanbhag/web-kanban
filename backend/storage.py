@@ -10,6 +10,9 @@ BLOCKED_COLUMN = "Blocked"
 TRASH_DIRNAME = ".trash"
 ID_COUNTER_FILENAME = ".id_counter"
 
+PRIORITIES = ("Low", "Medium", "High", "Urgent")
+DEFAULT_PRIORITY = "Medium"
+
 _INVALID_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 _FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---\n?(.*)$", re.DOTALL)
 _ID_RE = re.compile(r"^KAN-(\d+)$")
@@ -20,6 +23,12 @@ def sanitize_name(name: str) -> str:
     if not cleaned:
         raise ValueError("Name cannot be empty")
     return cleaned
+
+
+def _validate_priority(priority: str) -> str:
+    if priority not in PRIORITIES:
+        raise ValueError(f"priority must be one of {', '.join(PRIORITIES)}")
+    return priority
 
 
 def _column_dir(column: str) -> Path:
@@ -144,6 +153,7 @@ def get_all_boards() -> dict[str, list[dict]]:
                 "id": meta.get("id", ""),
                 "title": task_file.stem,
                 "description": description,
+                "priority": meta.get("priority") or DEFAULT_PRIORITY,
                 "blocked_by": meta.get("blocked_by") or None,
             }
             tasks.append(task)
@@ -165,6 +175,7 @@ def add_task(
     title: str,
     description: str = "",
     blocked_by: Optional[str] = None,
+    priority: str = DEFAULT_PRIORITY,
 ) -> str:
     column_dir = _column_dir(column)
     column_dir.mkdir(parents=True, exist_ok=True)
@@ -178,8 +189,12 @@ def add_task(
     else:
         blocked_by = None
 
+    priority = _validate_priority(priority)
+
     task_id = _next_id()
-    content = _render_task_content({"id": task_id, "blocked_by": blocked_by or ""}, description)
+    content = _render_task_content(
+        {"id": task_id, "blocked_by": blocked_by or "", "priority": priority}, description
+    )
     task_path.write_text(content, encoding="utf-8")
     return task_id
 
@@ -188,11 +203,15 @@ def update_task(
     task_id: str,
     new_title: Optional[str] = None,
     new_description: Optional[str] = None,
+    new_priority: Optional[str] = None,
 ) -> None:
     column, path, meta, description = _find_task(task_id)
 
     if new_description is not None:
         description = new_description
+
+    if new_priority is not None:
+        meta["priority"] = _validate_priority(new_priority)
 
     dest_path = path
     if new_title and new_title != path.stem:
@@ -248,6 +267,7 @@ def get_trash() -> list[dict]:
                 "id": meta.get("id", ""),
                 "title": meta.get("title", ""),
                 "description": description,
+                "priority": meta.get("priority") or DEFAULT_PRIORITY,
                 "deleted_from": meta.get("deleted_from") or "To Do",
                 "deleted_at": meta.get("deleted_at", ""),
             }

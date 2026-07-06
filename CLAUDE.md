@@ -12,9 +12,10 @@ plain Markdown files under `.kanban_data/`.
 
 - `backend/storage.py` — filesystem data layer. Each column is a directory under
   `.kanban_data/`; each task is a `<title>.md` file with a small frontmatter block (`id`,
-  `blocked_by`) followed by the description as the body. Functions: `get_all_boards`, `add_task`,
-  `update_task`, `move_task`, `delete_task`, `sanitize_name`. Column/task names are sanitized for
-  filesystem-unsafe characters (`sanitize_name`) before touching disk.
+  `blocked_by`, `priority`) followed by the description as the body. Functions:
+  `get_all_boards`, `add_task`, `update_task`, `move_task`, `delete_task`, `sanitize_name`.
+  Column/task names are sanitized for filesystem-unsafe characters (`sanitize_name`) before
+  touching disk.
 - `backend/main.py` — FastAPI app. REST endpoints under `/api/tasks`, CORS wide open
   (`allow_origins=["*"]`, fine for a local-only app). Mounts `frontend/` as static files at `/`
   (must stay mounted *last* so it doesn't shadow the API routes).
@@ -30,6 +31,13 @@ plain Markdown files under `.kanban_data/`.
   self-blocking, blocker must exist). The reverse `"blocks"` list is **computed on every read**
   in `get_all_boards`, not stored — don't add a stored/denormalized version of it, that would let
   the two directions drift out of sync.
+- Priority: `storage.PRIORITIES = ("Low", "Medium", "High", "Urgent")`, default
+  `storage.DEFAULT_PRIORITY = "Medium"`. Validated by `storage._validate_priority` on both create
+  and update (`PUT /api/tasks/{task_id}/priority`) — invalid values raise `ValueError`, which
+  `main.py` turns into a `400`. Priority is preserved across moves, blocking, and through the
+  recycle bin (soft delete and restore) automatically, since it's just another key in the same
+  frontmatter dict that every one of those operations already carries through untouched — don't
+  special-case it anywhere.
 - Recycle bin: `delete_task` is a **soft delete** — it moves the task's file into
   `.kanban_data/.trash/<id>.md` (filename is the ID, not the title, since trash can hold tasks
   that once shared a title with something else) and stamps `title`/`deleted_from`/`deleted_at`
@@ -40,15 +48,18 @@ plain Markdown files under `.kanban_data/`.
   file for good.
 - `frontend/app.js` — no build tooling, no framework. Talks to the API with `fetch`. Drag-and-drop
   calls the move endpoint; dropping onto the Blocked column opens a small modal to collect the
-  blocker ID first. The delete button on each card calls the delete endpoint (soft delete). A
-  recycle-bin icon fixed at the bottom-right (`.trash-fab`, with an unread-count badge) opens a
-  panel listing trashed tasks with Restore / Delete Permanently actions, plus an Empty Trash
-  button. Errors from the API surface via a toast (`showError`) — **never use
-  `alert()`/`confirm()` here**: they block the JS thread, and in at least one automated browser
-  context that hung the page outright (Chrome DevTools Protocol couldn't dispatch further events
-  until the dialog was dismissed). Destructive trash actions (permanent delete, empty trash) use
-  a custom in-page confirm modal (`confirmAction()` / `#confirm-modal-overlay`) instead of native
-  `confirm()`, for the same reason.
+  blocker ID first. Each card's priority is an inline `<select class="priority-pill">` — colored
+  via CSS `[data-priority="..."]` attribute selectors on both the pill and the card's left
+  border. It has `draggable = false` and stops `mousedown`/`click` propagation so interacting
+  with it doesn't fight the card's own HTML5 drag-and-drop. The delete button on each card calls
+  the delete endpoint (soft delete). A recycle-bin icon fixed at the bottom-right (`.trash-fab`,
+  with an unread-count badge) opens a panel listing trashed tasks with Restore / Delete
+  Permanently actions, plus an Empty Trash button. Errors from the API surface via a toast
+  (`showError`) — **never use `alert()`/`confirm()` here**: they block the JS thread, and in at
+  least one automated browser context that hung the page outright (Chrome DevTools Protocol
+  couldn't dispatch further events until the dialog was dismissed). Destructive trash actions
+  (permanent delete, empty trash) use a custom in-page confirm modal (`confirmAction()` /
+  `#confirm-modal-overlay`) instead of native `confirm()`, for the same reason.
 
 ## Running things
 
