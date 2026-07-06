@@ -311,6 +311,158 @@ body {
   background: rgba(9, 30, 66, 0.06);
 }
 
+.btn-primary.danger {
+  background: var(--danger);
+}
+
+.btn-primary.danger:hover {
+  background: #b32a09;
+}
+
+.btn-secondary.danger {
+  color: var(--danger);
+}
+
+.btn-secondary.danger:hover {
+  background: rgba(222, 53, 11, 0.1);
+}
+
+.trash-fab {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: none;
+  background: var(--surface);
+  color: var(--text-muted);
+  box-shadow: 0 4px 14px rgba(9, 30, 66, 0.25);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 90;
+  transition: color 0.15s ease, transform 0.15s ease;
+}
+
+.trash-fab:hover {
+  color: var(--danger);
+  transform: translateY(-2px);
+}
+
+.trash-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  background: var(--danger);
+  color: white;
+  font-size: 0.68rem;
+  font-weight: 700;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+}
+
+.trash-modal {
+  max-width: 520px;
+}
+
+.trash-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.trash-modal-header h3 {
+  margin: 0;
+}
+
+.trash-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.trash-empty-message {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  text-align: center;
+  padding: 1rem 0;
+}
+
+.trash-item {
+  background: var(--bg);
+  border-radius: 8px;
+  padding: 0.6rem 0.8rem;
+}
+
+.trash-item-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.trash-item-title {
+  font-weight: 600;
+  font-size: 0.9rem;
+  word-break: break-word;
+}
+
+.trash-item-id {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.trash-item-meta {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin: 0.2rem 0 0.5rem;
+}
+
+.trash-item-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.trash-item-actions button {
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  border: none;
+  border-radius: 6px;
+  padding: 0.3rem 0.6rem;
+  cursor: pointer;
+}
+
+.trash-item-actions .restore-btn {
+  background: rgba(91, 107, 255, 0.12);
+  color: var(--accent);
+}
+
+.trash-item-actions .restore-btn:hover {
+  background: rgba(91, 107, 255, 0.22);
+}
+
+.trash-item-actions .permanent-delete-btn {
+  background: rgba(222, 53, 11, 0.1);
+  color: var(--danger);
+}
+
+.trash-item-actions .permanent-delete-btn:hover {
+  background: rgba(222, 53, 11, 0.2);
+}
+
 .toast {
   display: none;
   position: fixed;

@@ -16,8 +16,22 @@ const blockBlockerIdInput = document.getElementById("block-blocker-id");
 
 const errorToast = document.getElementById("error-toast");
 
+const trashFab = document.getElementById("trash-fab");
+const trashBadge = document.getElementById("trash-badge");
+const trashModalOverlay = document.getElementById("trash-modal-overlay");
+const trashList = document.getElementById("trash-list");
+const trashEmptyMessage = document.getElementById("trash-empty-message");
+const emptyTrashBtn = document.getElementById("empty-trash-btn");
+const trashModalClose = document.getElementById("trash-modal-close");
+
+const confirmModalOverlay = document.getElementById("confirm-modal-overlay");
+const confirmMessage = document.getElementById("confirm-message");
+const confirmCancelBtn = document.getElementById("confirm-cancel");
+const confirmConfirmBtn = document.getElementById("confirm-confirm");
+
 let pendingMove = null;
 let toastTimer = null;
+let pendingConfirmAction = null;
 
 function showError(message) {
   errorToast.textContent = message;
@@ -144,6 +158,131 @@ async function moveTask(taskId, toColumn, blockedBy) {
 async function deleteTask(taskId) {
   await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}`, { method: "DELETE" });
   await loadBoard();
+  await refreshTrashBadge();
+}
+
+function formatRelativeTime(isoString) {
+  const then = new Date(isoString).getTime();
+  const seconds = Math.max(0, Math.floor((Date.now() - then) / 1000));
+
+  if (seconds < 60) return "just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+async function fetchTrash() {
+  const res = await fetch(`${API_BASE}/trash`);
+  return res.json();
+}
+
+async function refreshTrashBadge() {
+  const trashed = await fetchTrash();
+  trashBadge.textContent = trashed.length;
+  trashBadge.classList.toggle("hidden", trashed.length === 0);
+}
+
+function createTrashItemElement(item) {
+  const el = document.createElement("div");
+  el.className = "trash-item";
+
+  const header = document.createElement("div");
+  header.className = "trash-item-header";
+
+  const title = document.createElement("span");
+  title.className = "trash-item-title";
+  title.textContent = item.title;
+  header.appendChild(title);
+
+  const idTag = document.createElement("span");
+  idTag.className = "trash-item-id";
+  idTag.textContent = item.id;
+  header.appendChild(idTag);
+
+  el.appendChild(header);
+
+  const meta = document.createElement("p");
+  meta.className = "trash-item-meta";
+  meta.textContent = `Deleted from ${item.deleted_from} • ${formatRelativeTime(item.deleted_at)}`;
+  el.appendChild(meta);
+
+  const actions = document.createElement("div");
+  actions.className = "trash-item-actions";
+
+  const restoreBtn = document.createElement("button");
+  restoreBtn.className = "restore-btn";
+  restoreBtn.textContent = "Restore";
+  restoreBtn.addEventListener("click", () => restoreTask(item.id));
+  actions.appendChild(restoreBtn);
+
+  const permanentDeleteBtn = document.createElement("button");
+  permanentDeleteBtn.className = "permanent-delete-btn";
+  permanentDeleteBtn.textContent = "Delete Permanently";
+  permanentDeleteBtn.addEventListener("click", () => {
+    confirmAction(`Permanently delete "${item.title}" (${item.id})? This can't be undone.`, () =>
+      permanentDeleteTask(item.id)
+    );
+  });
+  actions.appendChild(permanentDeleteBtn);
+
+  el.appendChild(actions);
+  return el;
+}
+
+async function renderTrash() {
+  const trashed = await fetchTrash();
+  trashList.replaceChildren();
+  for (const item of trashed) {
+    trashList.appendChild(createTrashItemElement(item));
+  }
+  trashEmptyMessage.classList.toggle("hidden", trashed.length > 0);
+  trashBadge.textContent = trashed.length;
+  trashBadge.classList.toggle("hidden", trashed.length === 0);
+}
+
+async function restoreTask(taskId) {
+  const res = await fetch(`${API_BASE}/trash/${encodeURIComponent(taskId)}/restore`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    await handleApiError(res);
+    return;
+  }
+  await renderTrash();
+  await loadBoard();
+}
+
+async function permanentDeleteTask(taskId) {
+  await fetch(`${API_BASE}/trash/${encodeURIComponent(taskId)}`, { method: "DELETE" });
+  await renderTrash();
+}
+
+async function emptyTrash() {
+  await fetch(`${API_BASE}/trash`, { method: "DELETE" });
+  await renderTrash();
+}
+
+function openTrashModal() {
+  trashModalOverlay.classList.add("open");
+  renderTrash();
+}
+
+function closeTrashModal() {
+  trashModalOverlay.classList.remove("open");
+}
+
+function confirmAction(message, onConfirm) {
+  confirmMessage.textContent = message;
+  pendingConfirmAction = onConfirm;
+  confirmModalOverlay.classList.add("open");
+}
+
+function closeConfirmModal() {
+  confirmModalOverlay.classList.remove("open");
+  pendingConfirmAction = null;
 }
 
 function updateBlockedByVisibility() {
@@ -195,9 +334,34 @@ blockModalOverlay.addEventListener("click", (event) => {
   if (event.target === blockModalOverlay) closeBlockModal();
 });
 
+trashFab.addEventListener("click", openTrashModal);
+trashModalClose.addEventListener("click", closeTrashModal);
+
+trashModalOverlay.addEventListener("click", (event) => {
+  if (event.target === trashModalOverlay) closeTrashModal();
+});
+
+emptyTrashBtn.addEventListener("click", () => {
+  confirmAction("Permanently delete every task in the recycle bin? This can't be undone.", emptyTrash);
+});
+
+confirmCancelBtn.addEventListener("click", closeConfirmModal);
+
+confirmConfirmBtn.addEventListener("click", async () => {
+  const action = pendingConfirmAction;
+  closeConfirmModal();
+  if (action) await action();
+});
+
+confirmModalOverlay.addEventListener("click", (event) => {
+  if (event.target === confirmModalOverlay) closeConfirmModal();
+});
+
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape") return;
-  if (blockModalOverlay.classList.contains("open")) closeBlockModal();
+  if (confirmModalOverlay.classList.contains("open")) closeConfirmModal();
+  else if (blockModalOverlay.classList.contains("open")) closeBlockModal();
+  else if (trashModalOverlay.classList.contains("open")) closeTrashModal();
   else if (modalOverlay.classList.contains("open")) closeModal();
 });
 
@@ -251,3 +415,4 @@ document.querySelectorAll(".task-list").forEach((list) => {
 });
 
 loadBoard();
+refreshTrashBadge();

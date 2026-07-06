@@ -75,4 +75,34 @@ def delete_task(task_id: str):
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+@app.get("/api/trash")
+def list_trash():
+    return storage.get_trash()
+
+
+@app.post("/api/trash/{task_id}/restore")
+def restore_task(task_id: str):
+    try:
+        column = storage.restore_task(task_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except FileExistsError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"id": task_id, "column": column}
+
+
+@app.delete("/api/trash/{task_id}", status_code=204)
+def permanent_delete_task(task_id: str):
+    try:
+        storage.permanent_delete_task(task_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.delete("/api/trash")
+def empty_trash():
+    count = storage.empty_trash()
+    return {"deleted": count}
+
+
 app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")

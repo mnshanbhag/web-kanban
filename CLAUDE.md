@@ -19,20 +19,36 @@ plain Markdown files under `.kanban_data/`.
   (`allow_origins=["*"]`, fine for a local-only app). Mounts `frontend/` as static files at `/`
   (must stay mounted *last* so it doesn't shadow the API routes).
 - Tasks have a real, stable unique ID (`KAN-01`, `KAN-02`, ...) assigned once at creation by
-  `storage._next_id`, which scans all existing task files and takes `max(id) + 1` — there's no
-  separate counter file, the files themselves are the source of truth. `task_id` throughout the
-  API *is* this ID, not a synthetic composite, so it stays valid across moves/renames.
+  `storage._next_id`. **IDs are never reused** — `_next_id` reads/writes a persistent counter
+  file (`.kanban_data/.id_counter`), it does *not* scan for the current max ID on disk. Do not
+  "simplify" this back to a disk scan — that would let a permanently-deleted task's ID get
+  reassigned to the next new task, which is the one invariant this whole feature exists to
+  protect. `task_id` throughout the API *is* this ID, not a synthetic composite, so it stays
+  valid across moves/renames.
 - Blocking: a task in the `Blocked` column (`storage.BLOCKED_COLUMN`) must carry `blocked_by`
   pointing at another existing task's ID (validated by `storage._validate_blocker` — no
   self-blocking, blocker must exist). The reverse `"blocks"` list is **computed on every read**
   in `get_all_boards`, not stored — don't add a stored/denormalized version of it, that would let
   the two directions drift out of sync.
+- Recycle bin: `delete_task` is a **soft delete** — it moves the task's file into
+  `.kanban_data/.trash/<id>.md` (filename is the ID, not the title, since trash can hold tasks
+  that once shared a title with something else) and stamps `title`/`deleted_from`/`deleted_at`
+  onto its frontmatter. `_iter_task_files` and `get_all_boards` explicitly exclude
+  `storage.TRASH_DIRNAME` so trashed tasks never leak into the normal board view or the `blocks`
+  computation. `restore_task` reads `deleted_from` to know which column to put it back in;
+  `permanent_delete_task`/`empty_trash` are the only functions that actually `unlink()` a task
+  file for good.
 - `frontend/app.js` — no build tooling, no framework. Talks to the API with `fetch`. Drag-and-drop
   calls the move endpoint; dropping onto the Blocked column opens a small modal to collect the
-  blocker ID first. The delete button on each card calls the delete endpoint. Errors from the API
-  surface via a toast (`showError`) — **never use `alert()`/`confirm()` here**: they block the JS
-  thread, and in at least one automated browser context that hung the page outright (Chrome
-  DevTools Protocol couldn't dispatch further events until the dialog was dismissed).
+  blocker ID first. The delete button on each card calls the delete endpoint (soft delete). A
+  recycle-bin icon fixed at the bottom-right (`.trash-fab`, with an unread-count badge) opens a
+  panel listing trashed tasks with Restore / Delete Permanently actions, plus an Empty Trash
+  button. Errors from the API surface via a toast (`showError`) — **never use
+  `alert()`/`confirm()` here**: they block the JS thread, and in at least one automated browser
+  context that hung the page outright (Chrome DevTools Protocol couldn't dispatch further events
+  until the dialog was dismissed). Destructive trash actions (permanent delete, empty trash) use
+  a custom in-page confirm modal (`confirmAction()` / `#confirm-modal-overlay`) instead of native
+  `confirm()`, for the same reason.
 
 ## Running things
 

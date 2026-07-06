@@ -67,18 +67,34 @@ Task description goes here.
   every read by scanning for tasks whose `blocked_by` points at this task's ID. That keeps the
   two directions from ever going out of sync.
 
+### Recycle bin
+
+Deleting a task doesn't remove it — it's a soft delete. The task's file moves to
+`.kanban_data/.trash/<id>.md`, gaining `title` and `deleted_from` frontmatter fields (so it can
+be restored to the column it came from) plus a `deleted_at` timestamp. `.trash/` is excluded from
+the normal board view.
+
+Task IDs are **never reused**, even across a permanent delete or an emptied trash. This is
+tracked by a persistent counter file (`.kanban_data/.id_counter`) rather than by scanning for the
+current max ID on disk — scanning would let a deleted task's ID get handed to a new task once the
+old file was gone.
+
 ## API
 
-| Method | Path                       | Body                                       | Description                       |
-|--------|----------------------------|---------------------------------------------|------------------------------------|
-| GET    | `/api/status`              | —                                             | Health check                       |
-| GET    | `/api/tasks`                | —                                             | All columns and their tasks        |
-| POST   | `/api/tasks`                 | `{column, title, description, blocked_by?}` | Create a task                     |
-| PUT    | `/api/tasks/{task_id}/move`  | `{to_column, blocked_by?}`                   | Move a task to another column      |
-| DELETE | `/api/tasks/{task_id}`       | —                                             | Delete a task                      |
+| Method | Path                            | Body                                       | Description                        |
+|--------|----------------------------------|-----------------------------------------------|--------------------------------------|
+| GET    | `/api/status`                   | —                                             | Health check                        |
+| GET    | `/api/tasks`                     | —                                             | All columns and their tasks         |
+| POST   | `/api/tasks`                      | `{column, title, description, blocked_by?}` | Create a task                      |
+| PUT    | `/api/tasks/{task_id}/move`       | `{to_column, blocked_by?}`                   | Move a task to another column       |
+| DELETE | `/api/tasks/{task_id}`            | —                                             | Delete a task (soft — goes to trash)|
+| GET    | `/api/trash`                      | —                                             | List trashed tasks                  |
+| POST   | `/api/trash/{task_id}/restore`    | —                                             | Restore a task to its original column|
+| DELETE | `/api/trash/{task_id}`            | —                                             | Permanently delete one trashed task |
+| DELETE | `/api/trash`                      | —                                             | Permanently delete everything in trash|
 
 `task_id` is the task's own unique ID (e.g. `"KAN-05"`) — stable across moves, returned by
-`GET`/`POST` and passed back as-is to `move`/`delete`.
+`GET`/`POST` and passed back as-is to `move`/`delete`/`restore`.
 
 `blocked_by` is **required** when `column`/`to_column` is `"Blocked"` and must reference an
 existing task ID (not itself); the API returns `400` otherwise. Each task in the response also
