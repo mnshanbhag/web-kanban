@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# personal board data — keep the folder, ignore its contents
+.kanban_data/*
+!.kanban_data/.gitkeep
+
+# local-only permission overrides
+.claude/settings.local.json

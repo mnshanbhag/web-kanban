@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Kanban Board</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>Kanban Board</h1>
+  </header>
+
+  <main class="board" id="board">
+    <section class="column" data-column="To Do">
+      <div class="column-header">
+        <h2>To Do</h2>
+        <span class="count" id="count-To Do">0</span>
+      </div>
+      <div class="task-list" data-column="To Do"></div>
+      <button class="add-task-btn" data-column="To Do">+ Add Task</button>
+    </section>
+
+    <section class="column" data-column="In Progress">
+      <div class="column-header">
+        <h2>In Progress</h2>
+        <span class="count" id="count-In Progress">0</span>
+      </div>
+      <div class="task-list" data-column="In Progress"></div>
+      <button class="add-task-btn" data-column="In Progress">+ Add Task</button>
+    </section>
+
+    <section class="column" data-column="Done">
+      <div class="column-header">
+        <h2>Done</h2>
+        <span class="count" id="count-Done">0</span>
+      </div>
+      <div class="task-list" data-column="Done"></div>
+      <button class="add-task-btn" data-column="Done">+ Add Task</button>
+    </section>
+  </main>
+
+  <div class="modal-overlay" id="modal-overlay">
+    <div class="modal">
+      <h3>New Task</h3>
+      <form id="task-form">
+        <label for="task-title">Title</label>
+        <input type="text" id="task-title" required maxlength="120" placeholder="e.g. Write documentation" />
+
+        <label for="task-description">Description</label>
+        <textarea id="task-description" rows="4" placeholder="Optional details..."></textarea>
+
+        <label for="task-column">Column</label>
+        <select id="task-column">
+          <option value="To Do">To Do</option>
+          <option value="In Progress">In Progress</option>
+          <option value="Done">Done</option>
+        </select>
+
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" id="modal-cancel">Cancel</button>
+          <button type="submit" class="btn-primary">Add Task</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
