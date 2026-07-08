@@ -3,6 +3,9 @@
 A local Kanban board. FastAPI backend, vanilla JS/HTML/CSS frontend, tasks stored in a local
 SQLite database via SQLAlchemy, request/response shapes validated with Pydantic.
 
+See [`FEATURE_IDEAS.md`](FEATURE_IDEAS.md) for the backlog of proposed/in-progress/shipped
+features.
+
 ## Setup
 
 Requires Python 3.13+.

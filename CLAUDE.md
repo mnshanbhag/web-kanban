@@ -9,6 +9,10 @@ served as static files by the backend — no build step, no bundler). Task data 
 SQLite database (`.kanban_data/kanban.db`) via SQLAlchemy; request/response bodies are validated
 with Pydantic (`backend/schemas.py`).
 
+`FEATURE_IDEAS.md` is a backlog of proposed features, maintained by the `feature-ideator`
+subagent and built by handing an entry to `feature-implementer`. Not a spec — see its own status
+key for what's proposed/in-progress/shipped/shelved.
+
 ## Architecture
 
 - `backend/storage.py` — the persistence layer. Defines the SQLAlchemy `Task` ORM model
