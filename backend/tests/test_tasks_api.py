@@ -377,6 +377,67 @@ async def test_restoring_a_task_clears_a_now_done_blocker(client):
     assert restored["blocked_by"] is None
 
 
+async def test_task_can_be_created_and_moved_into_in_review(client):
+    kan_1 = (
+        await client.post("/api/tasks", json={"column": "In Progress", "title": "Ship feature"})
+    ).json()["id"]
+
+    move_response = await client.put(f"/api/tasks/{kan_1}/move", json={"to_column": "In Review"})
+    assert move_response.status_code == 200
+
+    board = (await client.get("/api/tasks")).json()
+    assert board["In Review"][0]["id"] == kan_1
+    assert board.get("In Progress", []) == []
+
+
+async def test_blocked_task_can_stay_in_in_review(client):
+    kan_1 = (
+        await client.post("/api/tasks", json={"column": "To Do", "title": "Blocker"})
+    ).json()["id"]
+    kan_2 = (
+        await client.post("/api/tasks", json={"column": "In Review", "title": "Dependent"})
+    ).json()["id"]
+
+    response = await client.put(f"/api/tasks/{kan_2}/blocked-by", json={"blocked_by": kan_1})
+    assert response.status_code == 200
+
+    board = (await client.get("/api/tasks")).json()
+    assert board["In Review"][0]["blocked_by"] == kan_1
+
+
+async def test_cannot_move_a_blocked_task_from_in_review_to_done(client):
+    kan_1 = (
+        await client.post("/api/tasks", json={"column": "To Do", "title": "Blocker"})
+    ).json()["id"]
+    kan_2 = (
+        await client.post("/api/tasks", json={"column": "In Review", "title": "Dependent"})
+    ).json()["id"]
+    await client.put(f"/api/tasks/{kan_2}/blocked-by", json={"blocked_by": kan_1})
+
+    response = await client.put(f"/api/tasks/{kan_2}/move", json={"to_column": "Done"})
+
+    assert response.status_code == 400
+    board = (await client.get("/api/tasks")).json()
+    assert any(t["id"] == kan_2 for t in board["In Review"])
+
+
+async def test_completing_a_blocker_from_in_review_clears_dependents(client):
+    kan_1 = (
+        await client.post("/api/tasks", json={"column": "In Review", "title": "Blocker"})
+    ).json()["id"]
+    kan_2 = (
+        await client.post("/api/tasks", json={"column": "To Do", "title": "Dependent"})
+    ).json()["id"]
+    await client.put(f"/api/tasks/{kan_2}/blocked-by", json={"blocked_by": kan_1})
+
+    move_response = await client.put(f"/api/tasks/{kan_1}/move", json={"to_column": "Done"})
+    assert move_response.status_code == 200
+
+    board = (await client.get("/api/tasks")).json()
+    dependent = next(t for t in board["To Do"] if t["id"] == kan_2)
+    assert dependent["blocked_by"] is None
+
+
 async def test_engine_creation_is_thread_safe_under_concurrent_first_access(tmp_path):
     """Regression test: the frontend fires GET /api/tasks and GET /api/trash
     concurrently on page load, and FastAPI runs sync handlers in a thread
