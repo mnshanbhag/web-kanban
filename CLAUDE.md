@@ -74,7 +74,8 @@ key for what's proposed/in-progress/shipped/shelved.
   correct "deleted just now" and the frontend's `formatRelativeTime` silently being off by your
   local UTC offset. If you add another datetime column, route it through the same helper (or an
   equivalent) before it reaches the API.
-- `frontend/app.js` — no build tooling, no framework. 3 columns only (`COLUMNS` — no "Blocked").
+- `frontend/app.js` — no build tooling, no framework. 4 columns (`COLUMNS` = To Do, In Progress,
+  In Review, Done — no separate "Blocked" column).
   Talks to the API with `fetch`. Drag-and-drop just calls the move endpoint directly now; there's
   no special-cased drop target anymore. Each card shows an inline "Blocked by KAN-XX" /
   "Blocks KAN-YY" badge when applicable (rendered in-place, cards never move or group by blocked

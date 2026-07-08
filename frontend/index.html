@@ -58,6 +58,15 @@
       <button class="add-task-btn" data-column="In Progress">+ Add Task</button>
     </section>
 
+    <section class="column" data-column="In Review">
+      <div class="column-header">
+        <h2>In Review</h2>
+        <span class="count" id="count-In Review">0</span>
+      </div>
+      <div class="task-list" data-column="In Review"></div>
+      <button class="add-task-btn" data-column="In Review">+ Add Task</button>
+    </section>
+
     <section class="column" data-column="Done">
       <div class="column-header">
         <h2>Done</h2>
@@ -82,6 +91,7 @@
         <select id="task-column">
           <option value="To Do">To Do</option>
           <option value="In Progress">In Progress</option>
+          <option value="In Review">In Review</option>
           <option value="Done">Done</option>
         </select>
 

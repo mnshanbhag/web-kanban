@@ -1,5 +1,5 @@
 const API_BASE = "/api";
-const COLUMNS = ["To Do", "In Progress", "Done"];
+const COLUMNS = ["To Do", "In Progress", "In Review", "Done"];
 const DONE_COLUMN = "Done";
 
 const DEFAULT_PRIORITY = "Medium";
