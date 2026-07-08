@@ -13,6 +13,7 @@ const columnSelect = document.getElementById("task-column");
 const priorityInput = document.getElementById("task-priority");
 const blockedByField = document.getElementById("task-blocked-by-field");
 const blockedByInput = document.getElementById("task-blocked-by");
+const dueDateInput = document.getElementById("task-due-date");
 
 const taskDetailModalOverlay = document.getElementById("task-detail-modal-overlay");
 const taskDetailForm = document.getElementById("task-detail-form");
@@ -22,6 +23,7 @@ const detailDescription = document.getElementById("detail-description");
 const detailTags = document.getElementById("detail-tags");
 const detailBlockedByField = document.getElementById("detail-blocked-by-field");
 const detailBlockedByInput = document.getElementById("detail-blocked-by");
+const detailDueDateInput = document.getElementById("detail-due-date");
 const detailSaveBtn = document.getElementById("detail-save-btn");
 const taskDetailCloseBtn = document.getElementById("task-detail-close");
 
@@ -119,7 +121,7 @@ function createCardElement(column, task) {
   });
   card.appendChild(prioritySelect);
 
-  if (task.blocked_by || (task.blocks && task.blocks.length)) {
+  if (task.blocked_by || (task.blocks && task.blocks.length) || task.due_date) {
     const tags = document.createElement("div");
     tags.className = "card-tags";
 
@@ -134,6 +136,18 @@ function createCardElement(column, task) {
       const tag = document.createElement("span");
       tag.className = "card-tag blocks";
       tag.textContent = `Blocks ${task.blocks.join(", ")}`;
+      tags.appendChild(tag);
+    }
+
+    if (task.due_date) {
+      const tag = document.createElement("span");
+      if (isOverdue(task.due_date, column)) {
+        tag.className = "card-tag overdue";
+        tag.textContent = "Overdue";
+      } else {
+        tag.className = "card-tag due-date";
+        tag.textContent = `Due ${formatDueDate(task.due_date)}`;
+      }
       tags.appendChild(tag);
     }
 
@@ -167,7 +181,7 @@ async function handleApiError(res) {
   showError(body.detail || "Something went wrong.");
 }
 
-async function createTask(column, title, description, blockedBy, priority) {
+async function createTask(column, title, description, blockedBy, priority, dueDate) {
   const res = await fetch(`${API_BASE}/tasks`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -177,6 +191,7 @@ async function createTask(column, title, description, blockedBy, priority) {
       description,
       blocked_by: blockedBy || null,
       priority: priority || DEFAULT_PRIORITY,
+      due_date: dueDate || null,
     }),
   });
   if (!res.ok) {
@@ -224,6 +239,20 @@ async function setBlockedBy(taskId, blockedBy) {
   return true;
 }
 
+async function setDueDate(taskId, dueDate) {
+  const res = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/due-date`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ due_date: dueDate || null }),
+  });
+  if (!res.ok) {
+    await handleApiError(res);
+    return false;
+  }
+  await loadBoard();
+  return true;
+}
+
 async function deleteTask(taskId) {
   await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}`, { method: "DELETE" });
   await loadBoard();
@@ -241,6 +270,15 @@ function formatRelativeTime(isoString) {
   if (hours < 24) return `${hours}h ago`;
   const days = Math.floor(hours / 24);
   return `${days}d ago`;
+}
+
+function formatDueDate(dueDate) {
+  return new Date(dueDate).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function isOverdue(dueDate, column) {
+  if (column === DONE_COLUMN) return false;
+  return new Date(dueDate).getTime() < Date.now();
 }
 
 async function fetchTrash() {
@@ -365,6 +403,7 @@ function openModal(column) {
   descriptionInput.value = "";
   priorityInput.value = DEFAULT_PRIORITY;
   blockedByInput.value = "";
+  dueDateInput.value = "";
   updateBlockedByVisibility();
   modalOverlay.classList.add("open");
   titleInput.focus();
@@ -393,6 +432,7 @@ function openTaskDetail(column, task) {
   detailBlockedByField.classList.toggle("hidden", !canBlock);
   detailSaveBtn.classList.toggle("hidden", !canBlock);
   detailBlockedByInput.value = task.blocked_by || "";
+  detailDueDateInput.value = task.due_date ? task.due_date.slice(0, 10) : "";
 
   taskDetailModalOverlay.classList.add("open");
 }
@@ -466,7 +506,8 @@ taskForm.addEventListener("submit", async (event) => {
     title,
     descriptionInput.value.trim(),
     blockedByInput.value.trim(),
-    priorityInput.value
+    priorityInput.value,
+    dueDateInput.value
   );
   if (ok) closeModal();
 });
@@ -475,8 +516,10 @@ taskDetailForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   if (!currentDetailTask) return;
   const blockedBy = detailBlockedByInput.value.trim();
-  const ok = await setBlockedBy(currentDetailTask.id, blockedBy || null);
-  if (ok) closeTaskDetail();
+  const blockedByOk = await setBlockedBy(currentDetailTask.id, blockedBy || null);
+  if (!blockedByOk) return;
+  const dueDateOk = await setDueDate(currentDetailTask.id, detailDueDateInput.value || null);
+  if (dueDateOk) closeTaskDetail();
 });
 
 document.querySelectorAll(".task-list").forEach((list) => {

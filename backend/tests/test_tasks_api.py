@@ -54,6 +54,7 @@ async def test_post_persists_task_to_sqlite_and_get_reads_it_back(client, tmp_pa
             "priority": "Medium",
             "blocked_by": None,
             "blocks": [],
+            "due_date": None,
         }
     ]
 
@@ -375,6 +376,105 @@ async def test_restoring_a_task_clears_a_now_done_blocker(client):
     board = (await client.get("/api/tasks")).json()
     restored = next(t for t in board["To Do"] if t["id"] == kan_2)
     assert restored["blocked_by"] is None
+
+
+async def test_create_task_with_due_date_round_trips(client):
+    response = await client.post(
+        "/api/tasks",
+        json={"column": "To Do", "title": "Ship it", "due_date": "2026-07-15"},
+    )
+
+    assert response.status_code == 201
+    board = (await client.get("/api/tasks")).json()
+    task = board["To Do"][0]
+    assert task["due_date"] is not None
+    assert task["due_date"].startswith("2026-07-15")
+
+
+async def test_create_task_without_due_date_leaves_it_null(client):
+    response = await client.post(
+        "/api/tasks", json={"column": "To Do", "title": "No deadline"}
+    )
+
+    assert response.status_code == 201
+    board = (await client.get("/api/tasks")).json()
+    assert board["To Do"][0]["due_date"] is None
+
+
+async def test_set_due_date_endpoint_sets_and_clears(client):
+    task_id = (
+        await client.post("/api/tasks", json={"column": "To Do", "title": "Deadline task"})
+    ).json()["id"]
+
+    set_response = await client.put(
+        f"/api/tasks/{task_id}/due-date", json={"due_date": "2026-08-01"}
+    )
+    assert set_response.status_code == 200
+
+    board = (await client.get("/api/tasks")).json()
+    task = next(t for t in board["To Do"] if t["id"] == task_id)
+    assert task["due_date"].startswith("2026-08-01")
+
+    clear_response = await client.put(
+        f"/api/tasks/{task_id}/due-date", json={"due_date": None}
+    )
+    assert clear_response.status_code == 200
+
+    board = (await client.get("/api/tasks")).json()
+    task = next(t for t in board["To Do"] if t["id"] == task_id)
+    assert task["due_date"] is None
+
+
+async def test_due_date_can_be_set_and_cleared_on_a_done_task(client):
+    """Unlike blocking, due dates have no column restriction: a Done task can
+    still carry or clear a due date."""
+    task_id = (
+        await client.post("/api/tasks", json={"column": "To Do", "title": "Finish me"})
+    ).json()["id"]
+    await client.put(f"/api/tasks/{task_id}/move", json={"to_column": "Done"})
+
+    set_response = await client.put(
+        f"/api/tasks/{task_id}/due-date", json={"due_date": "2026-07-01"}
+    )
+    assert set_response.status_code == 200
+
+    board = (await client.get("/api/tasks")).json()
+    task = next(t for t in board["Done"] if t["id"] == task_id)
+    assert task["due_date"].startswith("2026-07-01")
+
+    clear_response = await client.put(
+        f"/api/tasks/{task_id}/due-date", json={"due_date": None}
+    )
+    assert clear_response.status_code == 200
+
+    board = (await client.get("/api/tasks")).json()
+    task = next(t for t in board["Done"] if t["id"] == task_id)
+    assert task["due_date"] is None
+
+
+async def test_set_due_date_on_nonexistent_task_returns_404(client):
+    response = await client.put(
+        "/api/tasks/KAN-99/due-date", json={"due_date": "2026-07-01"}
+    )
+
+    assert response.status_code == 404
+
+
+async def test_due_date_is_timezone_aware(client):
+    task_id = (
+        await client.post(
+            "/api/tasks",
+            json={"column": "To Do", "title": "Timezone check", "due_date": "2026-07-15"},
+        )
+    ).json()["id"]
+
+    board = (await client.get("/api/tasks")).json()
+    task = next(t for t in board["To Do"] if t["id"] == task_id)
+
+    from datetime import datetime
+
+    parsed = datetime.fromisoformat(task["due_date"])
+    assert parsed.tzinfo is not None
 
 
 async def test_engine_creation_is_thread_safe_under_concurrent_first_access(tmp_path):

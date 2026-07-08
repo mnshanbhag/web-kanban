@@ -7,12 +7,14 @@ from fastapi.staticfiles import StaticFiles
 from backend import storage
 from backend.schemas import (
     BlockedByResponse,
+    DueDateResponse,
     EmptyTrashResponse,
     IdResponse,
     PriorityResponse,
     RestoreResponse,
     TaskBlockedByUpdate,
     TaskCreate,
+    TaskDueDateUpdate,
     TaskMove,
     TaskOut,
     TaskPriorityUpdate,
@@ -46,7 +48,12 @@ def list_tasks():
 def create_task(task: TaskCreate):
     try:
         task_id = storage.add_task(
-            task.column, task.title, task.description, task.blocked_by, task.priority
+            task.column,
+            task.title,
+            task.description,
+            task.blocked_by,
+            task.priority,
+            task.due_date,
         )
     except FileExistsError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -88,6 +95,17 @@ def set_blocked_by(task_id: str, body: TaskBlockedByUpdate):
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"id": task_id, "blocked_by": body.blocked_by}
+
+
+@app.put("/api/tasks/{task_id}/due-date", response_model=DueDateResponse)
+def set_due_date(task_id: str, body: TaskDueDateUpdate):
+    try:
+        storage.set_due_date(task_id, body.due_date)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"id": task_id, "due_date": body.due_date}
 
 
 @app.delete("/api/tasks/{task_id}", status_code=204)

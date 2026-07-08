@@ -30,6 +30,7 @@ class Task(Base):
     priority = Column(String, nullable=False, default=DEFAULT_PRIORITY)
     blocked_by_id = Column(Integer, ForeignKey("tasks.id", ondelete="SET NULL"), nullable=True)
     deleted_at = Column(DateTime, nullable=True)
+    due_date = Column(DateTime, nullable=True)
 
     blocked_by = relationship(
         "Task", remote_side=[id], backref="blocks", foreign_keys=[blocked_by_id]
@@ -139,6 +140,7 @@ def _task_to_dict(task: Task) -> dict:
         "priority": task.priority,
         "blocked_by": _display_id(task.blocked_by_id) if task.blocked_by_id else None,
         "blocks": [_display_id(t.id) for t in task.blocks if t.deleted_at is None],
+        "due_date": _utc_isoformat(task.due_date) if task.due_date is not None else None,
     }
 
 
@@ -162,6 +164,7 @@ def add_task(
     description: str = "",
     blocked_by: Optional[str] = None,
     priority: str = DEFAULT_PRIORITY,
+    due_date: Optional[str] = None,
 ) -> str:
     with _session() as session:
         _assert_title_available(session, column, title)
@@ -174,12 +177,15 @@ def add_task(
                 raise ValueError("A task cannot be created as Done while blocked")
             blocked_by_id = _validate_blocker(session, blocked_by, own_id=None)
 
+        parsed_due_date = datetime.fromisoformat(due_date) if due_date else None
+
         task = Task(
             title=title,
             description=description,
             column=column,
             priority=priority,
             blocked_by_id=blocked_by_id,
+            due_date=parsed_due_date,
         )
         session.add(task)
         session.commit()
@@ -219,6 +225,19 @@ def set_blocked_by(task_id: str, blocked_by: Optional[str]) -> None:
             task.blocked_by_id = _validate_blocker(session, blocked_by, own_id=task.id)
         else:
             task.blocked_by_id = None
+
+        session.commit()
+
+
+def set_due_date(task_id: str, due_date: Optional[str]) -> None:
+    """Set or clear a task's due date, independent of which column it's in."""
+    with _session() as session:
+        task = _get_active_task(session, task_id)
+
+        if due_date:
+            task.due_date = datetime.fromisoformat(due_date)
+        else:
+            task.due_date = None
 
         session.commit()
 
