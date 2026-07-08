@@ -1,3 +1,4 @@
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -42,11 +43,30 @@ def _enable_foreign_keys(dbapi_connection, _connection_record):
     cursor.close()
 
 
-def _engine():
+_engine_cache: dict[str, Engine] = {}
+_engine_lock = threading.Lock()
+
+
+def _engine() -> Engine:
+    """Cached per DATA_DIR (tests monkeypatch DATA_DIR to get isolated databases).
+
+    FastAPI runs sync route handlers in a thread pool, and the frontend fires
+    GET /api/tasks and GET /api/trash concurrently on page load. Without the
+    lock, two threads can both see an uninitialized cache for the same
+    DATA_DIR and race through create_engine()+create_all() at once, which
+    SQLite reports as "table tasks already exists" — this double-checked
+    lock ensures schema creation happens exactly once per DATA_DIR.
+    """
     DATA_DIR.mkdir(exist_ok=True)
-    engine = create_engine(f"sqlite:///{DATA_DIR / 'kanban.db'}")
-    Base.metadata.create_all(engine)
-    return engine
+    key = str(DATA_DIR)
+    if key in _engine_cache:
+        return _engine_cache[key]
+    with _engine_lock:
+        if key not in _engine_cache:
+            engine = create_engine(f"sqlite:///{DATA_DIR / 'kanban.db'}")
+            Base.metadata.create_all(engine)
+            _engine_cache[key] = engine
+        return _engine_cache[key]
 
 
 def _session() -> Session:

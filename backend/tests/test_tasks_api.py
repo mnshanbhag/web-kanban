@@ -1,3 +1,5 @@
+import threading
+
 import httpx
 import pytest
 
@@ -373,3 +375,26 @@ async def test_restoring_a_task_clears_a_now_done_blocker(client):
     board = (await client.get("/api/tasks")).json()
     restored = next(t for t in board["To Do"] if t["id"] == kan_2)
     assert restored["blocked_by"] is None
+
+
+async def test_engine_creation_is_thread_safe_under_concurrent_first_access(tmp_path):
+    """Regression test: the frontend fires GET /api/tasks and GET /api/trash
+    concurrently on page load, and FastAPI runs sync handlers in a thread
+    pool. Without a lock around schema creation, two threads racing through
+    _engine() for the same never-before-seen DATA_DIR both try to
+    CREATE TABLE and SQLite raises 'table tasks already exists'."""
+    errors = []
+
+    def touch():
+        try:
+            storage._engine()
+        except Exception as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    threads = [threading.Thread(target=touch) for _ in range(16)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert errors == []
