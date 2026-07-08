@@ -9,7 +9,7 @@ from sqlalchemy.orm import DeclarativeBase, Session, relationship
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / ".kanban_data"
 
-BLOCKED_COLUMN = "Blocked"
+DONE_COLUMN = "Done"
 PRIORITIES = ("Low", "Medium", "High", "Urgent")
 DEFAULT_PRIORITY = "Medium"
 
@@ -72,15 +72,16 @@ def _validate_priority(priority: str) -> str:
     return priority
 
 
-def _validate_blocker(session: Session, blocked_by: Optional[str], own_id: Optional[int]) -> int:
-    if not blocked_by:
-        raise ValueError(f"blocked_by is required when column is '{BLOCKED_COLUMN}'")
+def _validate_blocker(session: Session, blocked_by: str, own_id: Optional[int]) -> int:
+    """Validate a non-empty blocked_by string. Callers decide whether blocking is optional."""
     blocker_pk = _parse_id(blocked_by)
     if blocker_pk == own_id:
         raise ValueError("A task cannot block itself")
     blocker = session.get(Task, blocker_pk)
     if blocker is None or blocker.deleted_at is not None:
         raise ValueError(f"Blocker task '{blocked_by}' does not exist")
+    if blocker.column == DONE_COLUMN:
+        raise ValueError(f"Blocker task '{blocked_by}' is already Done")
     return blocker_pk
 
 
@@ -148,7 +149,9 @@ def add_task(
         priority = _validate_priority(priority)
 
         blocked_by_id = None
-        if column == BLOCKED_COLUMN:
+        if blocked_by:
+            if column == DONE_COLUMN:
+                raise ValueError("A task cannot be created as Done while blocked")
             blocked_by_id = _validate_blocker(session, blocked_by, own_id=None)
 
         task = Task(
@@ -185,18 +188,40 @@ def update_task(
         session.commit()
 
 
-def move_task(task_id: str, to_column: str, blocked_by: Optional[str] = None) -> None:
+def set_blocked_by(task_id: str, blocked_by: Optional[str]) -> None:
+    """Set or clear a task's blocker, independent of which column it's in."""
     with _session() as session:
         task = _get_active_task(session, task_id)
 
-        if to_column == BLOCKED_COLUMN:
+        if blocked_by:
+            if task.column == DONE_COLUMN:
+                raise ValueError("A Done task cannot be blocked")
             task.blocked_by_id = _validate_blocker(session, blocked_by, own_id=task.id)
         else:
             task.blocked_by_id = None
 
+        session.commit()
+
+
+def move_task(task_id: str, to_column: str) -> None:
+    with _session() as session:
+        task = _get_active_task(session, task_id)
+
+        if to_column == DONE_COLUMN and task.blocked_by_id is not None:
+            raise ValueError("A blocked task cannot be moved to Done")
+
         if to_column != task.column:
             _assert_title_available(session, to_column, task.title)
             task.column = to_column
+
+        if to_column == DONE_COLUMN:
+            dependents = (
+                session.query(Task)
+                .filter(Task.blocked_by_id == task.id, Task.deleted_at.is_(None))
+                .all()
+            )
+            for dependent in dependents:
+                dependent.blocked_by_id = None
 
         session.commit()
 
@@ -244,6 +269,12 @@ def restore_task(task_id: str) -> str:
     with _session() as session:
         task = _get_trashed_task(session, task_id)
         _assert_title_available(session, task.column, task.title, exclude_id=task.id)
+
+        if task.blocked_by_id is not None:
+            blocker = session.get(Task, task.blocked_by_id)
+            if blocker is None or blocker.deleted_at is not None or blocker.column == DONE_COLUMN:
+                task.blocked_by_id = None
+
         task.deleted_at = None
         session.commit()
         return task.column

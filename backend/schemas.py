@@ -15,11 +15,14 @@ class TaskCreate(BaseModel):
 
 class TaskMove(BaseModel):
     to_column: str
-    blocked_by: Optional[str] = None
 
 
 class TaskPriorityUpdate(BaseModel):
     priority: str
+
+
+class TaskBlockedByUpdate(BaseModel):
+    blocked_by: Optional[str] = None
 
 
 class TaskOut(BaseModel):
@@ -47,6 +50,11 @@ class IdResponse(BaseModel):
 class PriorityResponse(BaseModel):
     id: str
     priority: str
+
+
+class BlockedByResponse(BaseModel):
+    id: str
+    blocked_by: Optional[str] = None
 
 
 class RestoreResponse(BaseModel):

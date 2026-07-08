@@ -491,6 +491,33 @@ body {
   color: var(--danger);
 }
 
+.task-detail-modal {
+  max-width: 420px;
+}
+
+.task-detail-header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  margin-bottom: 0.5rem;
+}
+
+.task-detail-header h3 {
+  margin: 0;
+}
+
+.task-detail-description {
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0 0 0.75rem;
+}
+
+.task-detail-actions {
+  justify-content: space-between;
+}
+
 .add-task-btn {
   margin-top: 0.4rem;
   background: transparent;
