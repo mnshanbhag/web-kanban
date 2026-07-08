@@ -58,15 +58,6 @@
       <button class="add-task-btn" data-column="In Progress">+ Add Task</button>
     </section>
 
-    <section class="column" data-column="Blocked">
-      <div class="column-header">
-        <h2>Blocked</h2>
-        <span class="count" id="count-Blocked">0</span>
-      </div>
-      <div class="task-list" data-column="Blocked"></div>
-      <button class="add-task-btn" data-column="Blocked">+ Add Task</button>
-    </section>
-
     <section class="column" data-column="Done">
       <div class="column-header">
         <h2>Done</h2>
@@ -91,7 +82,6 @@
         <select id="task-column">
           <option value="To Do">To Do</option>
           <option value="In Progress">In Progress</option>
-          <option value="Blocked">Blocked</option>
           <option value="Done">Done</option>
         </select>
 
@@ -116,16 +106,22 @@
     </div>
   </div>
 
-  <div class="modal-overlay" id="block-modal-overlay">
-    <div class="modal">
-      <h3>Block Task</h3>
-      <form id="block-form">
-        <label for="block-blocker-id">Blocked by (task ID)</label>
-        <input type="text" id="block-blocker-id" required placeholder="e.g. KAN-02" />
-
+  <div class="modal-overlay" id="task-detail-modal-overlay">
+    <div class="modal task-detail-modal">
+      <div class="task-detail-header">
+        <span class="card-id" id="detail-id"></span>
+        <h3 id="detail-title"></h3>
+      </div>
+      <p class="task-detail-description" id="detail-description"></p>
+      <div class="card-tags" id="detail-tags"></div>
+      <form id="task-detail-form">
+        <div id="detail-blocked-by-field">
+          <label for="detail-blocked-by">Blocked by (task ID)</label>
+          <input type="text" id="detail-blocked-by" placeholder="e.g. KAN-02, or leave empty" />
+        </div>
         <div class="modal-actions">
-          <button type="button" class="btn-secondary" id="block-modal-cancel">Cancel</button>
-          <button type="submit" class="btn-primary">Confirm</button>
+          <button type="button" class="btn-secondary" id="task-detail-close">Close</button>
+          <button type="submit" class="btn-primary" id="detail-save-btn">Save</button>
         </div>
       </form>
     </div>

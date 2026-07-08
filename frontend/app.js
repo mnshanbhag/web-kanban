@@ -1,6 +1,6 @@
 const API_BASE = "/api";
-const COLUMNS = ["To Do", "In Progress", "Blocked", "Done"];
-const BLOCKED_COLUMN = "Blocked";
+const COLUMNS = ["To Do", "In Progress", "Done"];
+const DONE_COLUMN = "Done";
 
 const DEFAULT_PRIORITY = "Medium";
 const PRIORITIES = ["Low", "Medium", "High", "Urgent"];
@@ -14,9 +14,16 @@ const priorityInput = document.getElementById("task-priority");
 const blockedByField = document.getElementById("task-blocked-by-field");
 const blockedByInput = document.getElementById("task-blocked-by");
 
-const blockModalOverlay = document.getElementById("block-modal-overlay");
-const blockForm = document.getElementById("block-form");
-const blockBlockerIdInput = document.getElementById("block-blocker-id");
+const taskDetailModalOverlay = document.getElementById("task-detail-modal-overlay");
+const taskDetailForm = document.getElementById("task-detail-form");
+const detailId = document.getElementById("detail-id");
+const detailTitle = document.getElementById("detail-title");
+const detailDescription = document.getElementById("detail-description");
+const detailTags = document.getElementById("detail-tags");
+const detailBlockedByField = document.getElementById("detail-blocked-by-field");
+const detailBlockedByInput = document.getElementById("detail-blocked-by");
+const detailSaveBtn = document.getElementById("detail-save-btn");
+const taskDetailCloseBtn = document.getElementById("task-detail-close");
 
 const errorToast = document.getElementById("error-toast");
 
@@ -35,9 +42,9 @@ const confirmMessage = document.getElementById("confirm-message");
 const confirmCancelBtn = document.getElementById("confirm-cancel");
 const confirmConfirmBtn = document.getElementById("confirm-confirm");
 
-let pendingMove = null;
 let toastTimer = null;
 let pendingConfirmAction = null;
+let currentDetailTask = null;
 
 function showError(message) {
   errorToast.textContent = message;
@@ -137,8 +144,13 @@ function createCardElement(column, task) {
   deleteBtn.className = "card-delete";
   deleteBtn.textContent = "×";
   deleteBtn.title = "Delete task";
-  deleteBtn.addEventListener("click", () => deleteTask(task.id));
+  deleteBtn.addEventListener("click", (event) => {
+    event.stopPropagation();
+    deleteTask(task.id);
+  });
   card.appendChild(deleteBtn);
+
+  card.addEventListener("click", () => openTaskDetail(column, task));
 
   card.addEventListener("dragstart", () => {
     card.classList.add("dragging");
@@ -184,11 +196,25 @@ async function setPriority(taskId, priority) {
   await loadBoard();
 }
 
-async function moveTask(taskId, toColumn, blockedBy) {
+async function moveTask(taskId, toColumn) {
   const res = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/move`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ to_column: toColumn, blocked_by: blockedBy || null }),
+    body: JSON.stringify({ to_column: toColumn }),
+  });
+  if (!res.ok) {
+    await handleApiError(res);
+    return false;
+  }
+  await loadBoard();
+  return true;
+}
+
+async function setBlockedBy(taskId, blockedBy) {
+  const res = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/blocked-by`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ blocked_by: blockedBy || null }),
   });
   if (!res.ok) {
     await handleApiError(res);
@@ -329,9 +355,8 @@ function closeConfirmModal() {
 }
 
 function updateBlockedByVisibility() {
-  const isBlocked = columnSelect.value === BLOCKED_COLUMN;
-  blockedByField.classList.toggle("hidden", !isBlocked);
-  blockedByInput.required = isBlocked;
+  const canBlock = columnSelect.value !== DONE_COLUMN;
+  blockedByField.classList.toggle("hidden", !canBlock);
 }
 
 function openModal(column) {
@@ -349,16 +374,32 @@ function closeModal() {
   modalOverlay.classList.remove("open");
 }
 
-function openBlockModal(taskId, toColumn) {
-  pendingMove = { taskId, toColumn };
-  blockBlockerIdInput.value = "";
-  blockModalOverlay.classList.add("open");
-  blockBlockerIdInput.focus();
+function openTaskDetail(column, task) {
+  currentDetailTask = { id: task.id, column };
+
+  detailId.textContent = task.id;
+  detailTitle.textContent = task.title;
+  detailDescription.textContent = task.description || "No description.";
+
+  detailTags.replaceChildren();
+  if (task.blocks && task.blocks.length) {
+    const tag = document.createElement("span");
+    tag.className = "card-tag blocks";
+    tag.textContent = `Blocks ${task.blocks.join(", ")}`;
+    detailTags.appendChild(tag);
+  }
+
+  const canBlock = column !== DONE_COLUMN;
+  detailBlockedByField.classList.toggle("hidden", !canBlock);
+  detailSaveBtn.classList.toggle("hidden", !canBlock);
+  detailBlockedByInput.value = task.blocked_by || "";
+
+  taskDetailModalOverlay.classList.add("open");
 }
 
-function closeBlockModal() {
-  blockModalOverlay.classList.remove("open");
-  pendingMove = null;
+function closeTaskDetail() {
+  taskDetailModalOverlay.classList.remove("open");
+  currentDetailTask = null;
 }
 
 document.querySelectorAll(".add-task-btn").forEach((btn) => {
@@ -372,10 +413,10 @@ modalOverlay.addEventListener("click", (event) => {
   if (event.target === modalOverlay) closeModal();
 });
 
-document.getElementById("block-modal-cancel").addEventListener("click", closeBlockModal);
+taskDetailCloseBtn.addEventListener("click", closeTaskDetail);
 
-blockModalOverlay.addEventListener("click", (event) => {
-  if (event.target === blockModalOverlay) closeBlockModal();
+taskDetailModalOverlay.addEventListener("click", (event) => {
+  if (event.target === taskDetailModalOverlay) closeTaskDetail();
 });
 
 themeToggle.addEventListener("click", () => {
@@ -411,7 +452,7 @@ confirmModalOverlay.addEventListener("click", (event) => {
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape") return;
   if (confirmModalOverlay.classList.contains("open")) closeConfirmModal();
-  else if (blockModalOverlay.classList.contains("open")) closeBlockModal();
+  else if (taskDetailModalOverlay.classList.contains("open")) closeTaskDetail();
   else if (trashModalOverlay.classList.contains("open")) closeTrashModal();
   else if (modalOverlay.classList.contains("open")) closeModal();
 });
@@ -430,13 +471,12 @@ taskForm.addEventListener("submit", async (event) => {
   if (ok) closeModal();
 });
 
-blockForm.addEventListener("submit", async (event) => {
+taskDetailForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  if (!pendingMove) return;
-  const blockerId = blockBlockerIdInput.value.trim();
-  const { taskId, toColumn } = pendingMove;
-  const ok = await moveTask(taskId, toColumn, blockerId);
-  if (ok) closeBlockModal();
+  if (!currentDetailTask) return;
+  const blockedBy = detailBlockedByInput.value.trim();
+  const ok = await setBlockedBy(currentDetailTask.id, blockedBy || null);
+  if (ok) closeTaskDetail();
 });
 
 document.querySelectorAll(".task-list").forEach((list) => {
@@ -458,11 +498,7 @@ document.querySelectorAll(".task-list").forEach((list) => {
     const targetColumn = list.dataset.column;
     if (targetColumn === sourceColumn) return;
 
-    if (targetColumn === BLOCKED_COLUMN) {
-      openBlockModal(taskId, targetColumn);
-    } else {
-      moveTask(taskId, targetColumn, null);
-    }
+    moveTask(taskId, targetColumn);
   });
 });
 

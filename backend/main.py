@@ -6,10 +6,12 @@ from fastapi.staticfiles import StaticFiles
 
 from backend import storage
 from backend.schemas import (
+    BlockedByResponse,
     EmptyTrashResponse,
     IdResponse,
     PriorityResponse,
     RestoreResponse,
+    TaskBlockedByUpdate,
     TaskCreate,
     TaskMove,
     TaskOut,
@@ -67,7 +69,7 @@ def set_priority(task_id: str, body: TaskPriorityUpdate):
 @app.put("/api/tasks/{task_id}/move", response_model=IdResponse)
 def move_task(task_id: str, move: TaskMove):
     try:
-        storage.move_task(task_id, move.to_column, move.blocked_by)
+        storage.move_task(task_id, move.to_column)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except FileExistsError as exc:
@@ -75,6 +77,17 @@ def move_task(task_id: str, move: TaskMove):
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"id": task_id}
+
+
+@app.put("/api/tasks/{task_id}/blocked-by", response_model=BlockedByResponse)
+def set_blocked_by(task_id: str, body: TaskBlockedByUpdate):
+    try:
+        storage.set_blocked_by(task_id, body.blocked_by)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"id": task_id, "blocked_by": body.blocked_by}
 
 
 @app.delete("/api/tasks/{task_id}", status_code=204)

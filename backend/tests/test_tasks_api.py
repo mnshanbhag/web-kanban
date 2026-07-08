@@ -1,3 +1,5 @@
+import threading
+
 import httpx
 import pytest
 
@@ -56,7 +58,7 @@ async def test_post_persists_task_to_sqlite_and_get_reads_it_back(client, tmp_pa
     ]
 
 
-async def test_move_to_blocked_links_blocker_and_backlinks(client):
+async def test_set_blocked_by_links_blocker_and_backlinks(client):
     kan_1 = (
         await client.post("/api/tasks", json={"column": "To Do", "title": "Design schema"})
     ).json()["id"]
@@ -64,29 +66,113 @@ async def test_move_to_blocked_links_blocker_and_backlinks(client):
         await client.post("/api/tasks", json={"column": "To Do", "title": "Build endpoint"})
     ).json()["id"]
 
-    move_response = await client.put(
-        f"/api/tasks/{kan_2}/move",
-        json={"to_column": "Blocked", "blocked_by": kan_1},
+    block_response = await client.put(
+        f"/api/tasks/{kan_2}/blocked-by", json={"blocked_by": kan_1}
     )
-    assert move_response.status_code == 200
+    assert block_response.status_code == 200
 
     board = (await client.get("/api/tasks")).json()
 
-    blocked_task = board["Blocked"][0]
-    assert blocked_task["id"] == kan_2
-    assert blocked_task["blocked_by"] == kan_1
+    dependent = next(t for t in board["To Do"] if t["id"] == kan_2)
+    assert dependent["blocked_by"] == kan_1
 
-    blocker_task = board["To Do"][0]
-    assert blocker_task["id"] == kan_1
-    assert blocker_task["blocks"] == [kan_2]
+    blocker = next(t for t in board["To Do"] if t["id"] == kan_1)
+    assert blocker["blocks"] == [kan_2]
 
 
-async def test_move_to_blocked_without_blocker_fails(client):
+async def test_blocked_task_can_stay_in_any_non_done_column(client):
+    kan_1 = (
+        await client.post("/api/tasks", json={"column": "To Do", "title": "Blocker"})
+    ).json()["id"]
+    kan_2 = (
+        await client.post("/api/tasks", json={"column": "In Progress", "title": "Dependent"})
+    ).json()["id"]
+
+    response = await client.put(f"/api/tasks/{kan_2}/blocked-by", json={"blocked_by": kan_1})
+    assert response.status_code == 200
+
+    board = (await client.get("/api/tasks")).json()
+    assert board["In Progress"][0]["blocked_by"] == kan_1
+
+
+async def test_clearing_blocked_by_unblocks_the_task(client):
+    kan_1 = (await client.post("/api/tasks", json={"column": "To Do", "title": "A"})).json()["id"]
+    kan_2 = (await client.post("/api/tasks", json={"column": "To Do", "title": "B"})).json()["id"]
+    await client.put(f"/api/tasks/{kan_2}/blocked-by", json={"blocked_by": kan_1})
+
+    response = await client.put(f"/api/tasks/{kan_2}/blocked-by", json={"blocked_by": None})
+    assert response.status_code == 200
+
+    board = (await client.get("/api/tasks")).json()
+    dependent = next(t for t in board["To Do"] if t["id"] == kan_2)
+    assert dependent["blocked_by"] is None
+
+
+async def test_set_blocked_by_with_nonexistent_blocker_fails(client):
     kan_1 = (
         await client.post("/api/tasks", json={"column": "To Do", "title": "Solo task"})
     ).json()["id"]
 
-    response = await client.put(f"/api/tasks/{kan_1}/move", json={"to_column": "Blocked"})
+    response = await client.put(f"/api/tasks/{kan_1}/blocked-by", json={"blocked_by": "KAN-99"})
+
+    assert response.status_code == 400
+
+
+async def test_cannot_move_a_blocked_task_to_done(client):
+    kan_1 = (await client.post("/api/tasks", json={"column": "To Do", "title": "Blocker"})).json()[
+        "id"
+    ]
+    kan_2 = (
+        await client.post("/api/tasks", json={"column": "To Do", "title": "Dependent"})
+    ).json()["id"]
+    await client.put(f"/api/tasks/{kan_2}/blocked-by", json={"blocked_by": kan_1})
+
+    response = await client.put(f"/api/tasks/{kan_2}/move", json={"to_column": "Done"})
+
+    assert response.status_code == 400
+    board = (await client.get("/api/tasks")).json()
+    assert any(t["id"] == kan_2 for t in board["To Do"])
+
+
+async def test_completing_a_task_clears_blocked_by_on_its_dependents(client):
+    kan_1 = (await client.post("/api/tasks", json={"column": "To Do", "title": "Blocker"})).json()[
+        "id"
+    ]
+    kan_2 = (
+        await client.post("/api/tasks", json={"column": "To Do", "title": "Dependent"})
+    ).json()["id"]
+    await client.put(f"/api/tasks/{kan_2}/blocked-by", json={"blocked_by": kan_1})
+
+    move_response = await client.put(f"/api/tasks/{kan_1}/move", json={"to_column": "Done"})
+    assert move_response.status_code == 200
+
+    board = (await client.get("/api/tasks")).json()
+    dependent = next(t for t in board["To Do"] if t["id"] == kan_2)
+    assert dependent["blocked_by"] is None
+
+
+async def test_cannot_block_on_a_task_that_is_already_done(client):
+    kan_1 = (await client.post("/api/tasks", json={"column": "To Do", "title": "Finished"})).json()[
+        "id"
+    ]
+    await client.put(f"/api/tasks/{kan_1}/move", json={"to_column": "Done"})
+    kan_2 = (
+        await client.post("/api/tasks", json={"column": "To Do", "title": "Waiting"})
+    ).json()["id"]
+
+    response = await client.put(f"/api/tasks/{kan_2}/blocked-by", json={"blocked_by": kan_1})
+
+    assert response.status_code == 400
+
+
+async def test_cannot_create_task_as_done_while_blocked(client):
+    kan_1 = (await client.post("/api/tasks", json={"column": "To Do", "title": "Blocker"})).json()[
+        "id"
+    ]
+
+    response = await client.post(
+        "/api/tasks", json={"column": "Done", "title": "Impossible", "blocked_by": kan_1}
+    )
 
     assert response.status_code == 400
 
@@ -261,12 +347,54 @@ async def test_permanently_deleting_a_blocker_nulls_out_dependents(client):
     kan_2 = (
         await client.post("/api/tasks", json={"column": "To Do", "title": "Dependent"})
     ).json()["id"]
-    await client.put(f"/api/tasks/{kan_2}/move", json={"to_column": "Blocked", "blocked_by": kan_1})
+    await client.put(f"/api/tasks/{kan_2}/blocked-by", json={"blocked_by": kan_1})
 
     await client.delete(f"/api/tasks/{kan_1}")
     await client.delete(f"/api/trash/{kan_1}")
 
     board = (await client.get("/api/tasks")).json()
-    dependent = board["Blocked"][0]
-    assert dependent["id"] == kan_2
+    dependent = next(t for t in board["To Do"] if t["id"] == kan_2)
     assert dependent["blocked_by"] is None
+
+
+async def test_restoring_a_task_clears_a_now_done_blocker(client):
+    kan_1 = (await client.post("/api/tasks", json={"column": "To Do", "title": "Blocker"})).json()[
+        "id"
+    ]
+    kan_2 = (
+        await client.post("/api/tasks", json={"column": "To Do", "title": "Dependent"})
+    ).json()["id"]
+    await client.put(f"/api/tasks/{kan_2}/blocked-by", json={"blocked_by": kan_1})
+    await client.delete(f"/api/tasks/{kan_2}")
+
+    await client.put(f"/api/tasks/{kan_1}/move", json={"to_column": "Done"})
+
+    restore_response = await client.post(f"/api/trash/{kan_2}/restore")
+    assert restore_response.status_code == 200
+
+    board = (await client.get("/api/tasks")).json()
+    restored = next(t for t in board["To Do"] if t["id"] == kan_2)
+    assert restored["blocked_by"] is None
+
+
+async def test_engine_creation_is_thread_safe_under_concurrent_first_access(tmp_path):
+    """Regression test: the frontend fires GET /api/tasks and GET /api/trash
+    concurrently on page load, and FastAPI runs sync handlers in a thread
+    pool. Without a lock around schema creation, two threads racing through
+    _engine() for the same never-before-seen DATA_DIR both try to
+    CREATE TABLE and SQLite raises 'table tasks already exists'."""
+    errors = []
+
+    def touch():
+        try:
+            storage._engine()
+        except Exception as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    threads = [threading.Thread(target=touch) for _ in range(16)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert errors == []

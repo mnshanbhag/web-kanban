@@ -30,16 +30,28 @@ with Pydantic (`backend/schemas.py`).
   is enforced by SQLite's `AUTOINCREMENT` (`Task.__table_args__ = {"sqlite_autoincrement": True}`),
   not by any counter file or max-id scan. Do not remove that table arg; without it SQLite's
   default ROWID reuse behavior could hand a deleted task's id to a new one.
-- Blocking: a task in the `Blocked` column (`storage.BLOCKED_COLUMN`) must carry `blocked_by_id`
-  pointing at another existing, non-trashed task (validated by `storage._validate_blocker` — no
-  self-blocking, blocker must exist). This is a real self-referential foreign key
-  (`ForeignKey("tasks.id", ondelete="SET NULL")`) with FK enforcement turned on for every SQLite
-  connection via the `Engine "connect"` event listener (`PRAGMA foreign_keys=ON` — SQLite doesn't
-  enforce FKs by default). Permanently deleting a blocker therefore auto-nulls `blocked_by_id` on
-  every task that referenced it — an actual improvement over the old file-based version, which
-  just left a dangling string reference. The reverse `"blocks"` list is the SQLAlchemy `backref`
-  of that relationship, computed by the ORM on read — still not a stored/denormalized column,
-  don't add one.
+- Blocking is a **flag** (`blocked_by_id`), not a column — `storage.DONE_COLUMN = "Done"` is the
+  only column with special meaning now. A task in any non-Done column can carry `blocked_by_id`
+  pointing at another existing, non-trashed, non-Done task (validated by
+  `storage._validate_blocker` — no self-blocking, blocker must exist, blocker can't already be
+  Done). This is a real self-referential foreign key (`ForeignKey("tasks.id", ondelete="SET
+  NULL")`) with FK enforcement turned on for every SQLite connection via the `Engine "connect"`
+  event listener (`PRAGMA foreign_keys=ON` — SQLite doesn't enforce FKs by default). Permanently
+  deleting a blocker auto-nulls `blocked_by_id` on every task that referenced it via that FK. The
+  reverse `"blocks"` list is the SQLAlchemy `backref` of that relationship, computed by the ORM on
+  read — still not a stored/denormalized column, don't add one.
+  - `storage.set_blocked_by(task_id, blocked_by)` is the only way to set/clear a block — pass
+    `None` to clear it. It's independent of `move_task`; moving a task no longer touches
+    `blocked_by_id` at all except in the two cases below.
+  - `move_task` rejects (`ValueError` → `400`) moving a blocked task to Done.
+  - `move_task` cascades: when a task's *target* column is Done, every active task whose
+    `blocked_by_id` points at it gets cleared. This is the "finishing something can't leave a
+    dependent blocked" rule — don't remove it, and don't be tempted to move it into
+    `set_blocked_by` instead, since it needs to fire on every path that can result in a task
+    becoming Done, not just explicit blocking calls.
+  - `restore_task` re-checks the blocker on restore (was it deleted or did it become Done while
+    this task sat in the trash?) and clears `blocked_by_id` if so — the same invariant enforced a
+    second time, because trashed tasks are invisible to the `move_task` cascade above.
 - Priority: `storage.PRIORITIES = ("Low", "Medium", "High", "Urgent")`, default
   `storage.DEFAULT_PRIORITY = "Medium"`. Validated by `storage._validate_priority` on both create
   and update (`PUT /api/tasks/{task_id}/priority`) — invalid values raise `ValueError`, which
@@ -58,13 +70,26 @@ with Pydantic (`backend/schemas.py`).
   correct "deleted just now" and the frontend's `formatRelativeTime` silently being off by your
   local UTC offset. If you add another datetime column, route it through the same helper (or an
   equivalent) before it reaches the API.
-- `frontend/app.js` — no build tooling, no framework. Talks to the API with `fetch`. Drag-and-drop
-  calls the move endpoint; dropping onto the Blocked column opens a small modal to collect the
-  blocker ID first. Each card's priority is an inline `<select class="priority-pill">` — colored
-  via CSS `[data-priority="..."]` attribute selectors on both the pill and the card's left
-  border. It has `draggable = false` and stops `mousedown`/`click` propagation so interacting
-  with it doesn't fight the card's own HTML5 drag-and-drop. The delete button on each card calls
-  the delete endpoint (soft delete). A recycle-bin icon fixed at the bottom-right (`.trash-fab`,
+- `frontend/app.js` — no build tooling, no framework. 3 columns only (`COLUMNS` — no "Blocked").
+  Talks to the API with `fetch`. Drag-and-drop just calls the move endpoint directly now; there's
+  no special-cased drop target anymore. Each card shows an inline "Blocked by KAN-XX" /
+  "Blocks KAN-YY" badge when applicable (rendered in-place, cards never move or group by blocked
+  state — this was a deliberate choice over grouping/sorting variants, see project history if you
+  need the rationale), but the card itself carries **no editing controls** — clicking anywhere on
+  a card (other than the priority pill or delete button, which stop propagation) opens
+  `#task-detail-modal-overlay` via `openTaskDetail(column, task)`. That's deliberate: an earlier
+  version put a "Block"/"Unblock" button directly on the card and the user asked for it to move
+  behind a click-in detail view instead, to keep the board itself lean — see
+  `feedback_card_density` in memory if this pattern gets challenged again. The detail view has a
+  plain `#detail-blocked-by` text input (not a separate modal) — empty means unblocked, a task ID
+  means blocked by that task; submitting the form calls `setBlockedBy(id, value || null)`. That
+  field (and its Save button) is hidden entirely for cards in Done, since a Done task can never be
+  blocked (an invariant enforced server-side too — don't rely on the frontend hiding it as the
+  only guard). Each card's priority is an inline `<select class="priority-pill">` — colored via CSS
+  `[data-priority="..."]` attribute selectors on both the pill and the card's left border. It has
+  `draggable = false` and stops `mousedown`/`click` propagation so interacting with it doesn't
+  fight the card's own HTML5 drag-and-drop. The delete button on each card calls the delete
+  endpoint (soft delete). A recycle-bin icon fixed at the bottom-right (`.trash-fab`,
   with an unread-count badge) opens a panel listing trashed tasks with Restore / Delete
   Permanently actions, plus an Empty Trash button. Errors from the API surface via a toast
   (`showError`) — **never use `alert()`/`confirm()` here**: they block the JS thread, and in at
