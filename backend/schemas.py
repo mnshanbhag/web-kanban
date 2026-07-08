@@ -11,6 +11,7 @@ class TaskCreate(BaseModel):
     description: str = ""
     blocked_by: Optional[str] = None
     priority: str = storage.DEFAULT_PRIORITY
+    due_date: Optional[str] = None
 
 
 class TaskMove(BaseModel):
@@ -25,6 +26,10 @@ class TaskBlockedByUpdate(BaseModel):
     blocked_by: Optional[str] = None
 
 
+class TaskDueDateUpdate(BaseModel):
+    due_date: Optional[str] = None
+
+
 class TaskOut(BaseModel):
     id: str
     title: str
@@ -32,6 +37,7 @@ class TaskOut(BaseModel):
     priority: str
     blocked_by: Optional[str] = None
     blocks: list[str] = []
+    due_date: Optional[str] = None
 
 
 class TrashedTaskOut(BaseModel):
@@ -55,6 +61,11 @@ class PriorityResponse(BaseModel):
 class BlockedByResponse(BaseModel):
     id: str
     blocked_by: Optional[str] = None
+
+
+class DueDateResponse(BaseModel):
+    id: str
+    due_date: Optional[str] = None
 
 
 class RestoreResponse(BaseModel):

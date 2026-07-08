@@ -39,6 +39,9 @@
   --danger-glow: rgba(239, 68, 68, 0.3);
   --danger-glow-strong: rgba(239, 68, 68, 0.4);
 
+  --warning: #d97706;
+  --warning-soft: rgba(217, 119, 6, 0.12);
+
   --hover-tint: rgba(32, 28, 61, 0.06);
   --overlay-bg: rgba(32, 28, 61, 0.45);
   --modal-shadow: 0 24px 60px rgba(32, 28, 61, 0.28);
@@ -85,6 +88,9 @@
   --danger-soft-strong: rgba(240, 89, 107, 0.24);
   --danger-glow: rgba(240, 89, 107, 0.3);
   --danger-glow-strong: rgba(240, 89, 107, 0.4);
+
+  --warning: #fb923c;
+  --warning-soft: rgba(251, 146, 60, 0.16);
 
   --hover-tint: rgba(255, 255, 255, 0.06);
   --overlay-bg: rgba(0, 0, 0, 0.6);
@@ -424,6 +430,16 @@ body {
 .card-tag.blocks {
   background: var(--accent-soft);
   color: var(--accent);
+}
+
+.card-tag.overdue {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.card-tag.due-date {
+  background: var(--hover-tint);
+  color: var(--text-muted);
 }
 
 .priority-pill {
