@@ -306,6 +306,12 @@ body {
   letter-spacing: 0.06em;
 }
 
+.column-header-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
 .count {
   background: var(--accent-soft);
   color: var(--accent);
@@ -313,6 +319,44 @@ body {
   font-weight: 700;
   padding: 0.1rem 0.55rem;
   border-radius: 999px;
+  transition: background 0.15s var(--ease), color 0.15s var(--ease);
+}
+
+.count.over-limit {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.wip-limit-input {
+  width: 2.2rem;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-align: center;
+  padding: 0.15rem 0.2rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--field-bg);
+  color: var(--text-muted);
+  -moz-appearance: textfield;
+  transition: border-color 0.15s var(--ease), box-shadow 0.15s var(--ease);
+}
+
+.wip-limit-input::-webkit-outer-spin-button,
+.wip-limit-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.wip-limit-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-ring);
+}
+
+.wip-limit-input.over-limit {
+  border-color: var(--warning);
+  color: var(--warning);
 }
 
 .task-list {

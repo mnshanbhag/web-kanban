@@ -13,6 +13,11 @@ pick one and hand it to `feature-implementer` to actually build it.
 Nullable `due_date` on tasks with an "Overdue" badge on cards past due (suppressed for Done).
 Shipped on `feature_due_dates` (2026-07-08).
 
+### WIP limit warning per column
+Optional per-column WIP cap, editable inline in the column header and persisted in
+`localStorage`; the count badge flags with the existing warning color when exceeded. Purely
+advisory — no backend change. Shipped on `feature_wip_limits` (2026-07-09).
+
 ---
 
 ## 🆕 Proposed
@@ -50,23 +55,14 @@ An `updated_at` column touched on every mutation, surfaced on cards via the exis
 - **Tension:** same tzinfo gotcha as above. Easy to miss a mutation path (e.g. the Done-cascade's
   dependent-clearing loop in `move_task`) — decide upfront whether that counts as "updating."
 
-### 5. WIP limit warning per column
-An optional soft cap (e.g. on "In Progress") that visually flags the column header when exceeded
-— a nudge, not a block.
-- **Why:** WIP limits are core Kanban discipline; a *soft* warning fits a single-user tool better
-  than a server-enforced rule.
-- **Scope:** small — could be pure frontend/localStorage, no backend change needed.
-- **Tension:** must stay advisory. Don't implement it as a server-side invariant like the
-  blocking rules — this is a personal-workflow nudge, not a business rule.
-
-### 6. Keyboard shortcuts / quick-add
+### 5. Keyboard shortcuts / quick-add
 A shortcut to open "new task," `/` to focus search (pairs with #1), arrow-key card navigation.
 Extends the existing `Escape`-key handler pattern in `app.js`.
 - **Why:** cheap ergonomics win for a tool used many times a day by one person.
 - **Scope:** small, frontend-only.
 - **Tension:** must not hijack keys while a modal input/textarea has focus.
 
-### 7. JSON export / import (manual backup)
+### 6. JSON export / import (manual backup)
 A "download backup" button dumping all tasks (active + trashed) as JSON; matching import.
 - **Why:** the whole app is one local SQLite file with no sync or versioned backups.
 - **Scope:** small for export (wraps existing `get_all_boards`/`get_trash`); import is the harder
@@ -76,7 +72,7 @@ A "download backup" button dumping all tasks (active + trashed) as JSON; matchin
   guarantee has already retired. Consider shipping export first, treating import as a separate,
   carefully-scoped follow-up.
 
-### 8. Archive Done tasks separately from trash
+### 7. Archive Done tasks separately from trash
 Auto-hide (not delete) Done tasks older than N days, with a way to view/unarchive them.
 - **Why:** long-lived boards accumulate Done clutter that isn't "deleted," just old.
 - **Scope:** medium — a third state (`archived_at`) alongside active/trashed.

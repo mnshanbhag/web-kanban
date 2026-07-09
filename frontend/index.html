@@ -43,7 +43,10 @@
     <section class="column" data-column="To Do">
       <div class="column-header">
         <h2>To Do</h2>
-        <span class="count" id="count-To Do">0</span>
+        <div class="column-header-meta">
+          <input type="number" class="wip-limit-input" id="wip-limit-To Do" data-column="To Do" min="1" placeholder="∞" title="WIP limit (optional)" />
+          <span class="count" id="count-To Do">0</span>
+        </div>
       </div>
       <div class="task-list" data-column="To Do"></div>
       <button class="add-task-btn" data-column="To Do">+ Add Task</button>
@@ -52,7 +55,10 @@
     <section class="column" data-column="In Progress">
       <div class="column-header">
         <h2>In Progress</h2>
-        <span class="count" id="count-In Progress">0</span>
+        <div class="column-header-meta">
+          <input type="number" class="wip-limit-input" id="wip-limit-In Progress" data-column="In Progress" min="1" placeholder="∞" title="WIP limit (optional)" />
+          <span class="count" id="count-In Progress">0</span>
+        </div>
       </div>
       <div class="task-list" data-column="In Progress"></div>
       <button class="add-task-btn" data-column="In Progress">+ Add Task</button>
@@ -61,7 +67,10 @@
     <section class="column" data-column="In Review">
       <div class="column-header">
         <h2>In Review</h2>
-        <span class="count" id="count-In Review">0</span>
+        <div class="column-header-meta">
+          <input type="number" class="wip-limit-input" id="wip-limit-In Review" data-column="In Review" min="1" placeholder="∞" title="WIP limit (optional)" />
+          <span class="count" id="count-In Review">0</span>
+        </div>
       </div>
       <div class="task-list" data-column="In Review"></div>
       <button class="add-task-btn" data-column="In Review">+ Add Task</button>
@@ -70,7 +79,10 @@
     <section class="column" data-column="Done">
       <div class="column-header">
         <h2>Done</h2>
-        <span class="count" id="count-Done">0</span>
+        <div class="column-header-meta">
+          <input type="number" class="wip-limit-input" id="wip-limit-Done" data-column="Done" min="1" placeholder="∞" title="WIP limit (optional)" />
+          <span class="count" id="count-Done">0</span>
+        </div>
       </div>
       <div class="task-list" data-column="Done"></div>
       <button class="add-task-btn" data-column="Done">+ Add Task</button>
