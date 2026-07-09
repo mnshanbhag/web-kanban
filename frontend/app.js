@@ -44,6 +44,11 @@ const confirmMessage = document.getElementById("confirm-message");
 const confirmCancelBtn = document.getElementById("confirm-cancel");
 const confirmConfirmBtn = document.getElementById("confirm-confirm");
 
+const filterSearchInput = document.getElementById("filter-search");
+const filterPrioritySelect = document.getElementById("filter-priority");
+const filterBlockedOnlyInput = document.getElementById("filter-blocked-only");
+const filterClearBtn = document.getElementById("filter-clear");
+
 let toastTimer = null;
 let pendingConfirmAction = null;
 let currentDetailTask = null;
@@ -73,6 +78,7 @@ function renderBoard(board) {
     }
     countEl.textContent = tasks.length;
   }
+  applyFilters();
 }
 
 function createCardElement(column, task) {
@@ -82,6 +88,8 @@ function createCardElement(column, task) {
   card.dataset.id = task.id;
   card.dataset.column = column;
   card.dataset.priority = task.priority || DEFAULT_PRIORITY;
+  card.dataset.blocked = task.blocked_by ? "true" : "false";
+  card.dataset.searchText = `${task.title} ${task.description || ""}`.toLowerCase();
 
   const idTag = document.createElement("span");
   idTag.className = "card-id";
@@ -372,6 +380,40 @@ async function emptyTrash() {
   await renderTrash();
 }
 
+function applyFilters() {
+  const query = filterSearchInput.value.trim().toLowerCase();
+  const priority = filterPrioritySelect.value;
+  const blockedOnly = filterBlockedOnlyInput.checked;
+  const active = Boolean(query || priority || blockedOnly);
+
+  for (const column of COLUMNS) {
+    const list = document.querySelector(`.task-list[data-column="${column}"]`);
+    const countEl = document.getElementById(`count-${column}`);
+    const cards = list.querySelectorAll(".card");
+    let visibleCount = 0;
+
+    cards.forEach((card) => {
+      const matchesQuery = !query || card.dataset.searchText.includes(query);
+      const matchesPriority = !priority || card.dataset.priority === priority;
+      const matchesBlocked = !blockedOnly || card.dataset.blocked === "true";
+      const matches = matchesQuery && matchesPriority && matchesBlocked;
+      card.classList.toggle("filtered-out", !matches);
+      if (matches) visibleCount += 1;
+    });
+
+    countEl.textContent = active ? `${visibleCount}/${cards.length}` : `${cards.length}`;
+  }
+
+  filterClearBtn.classList.toggle("hidden", !active);
+}
+
+function clearFilters() {
+  filterSearchInput.value = "";
+  filterPrioritySelect.value = "";
+  filterBlockedOnlyInput.checked = false;
+  applyFilters();
+}
+
 function openTrashModal() {
   trashModalOverlay.classList.add("open");
   renderTrash();
@@ -521,6 +563,11 @@ taskDetailForm.addEventListener("submit", async (event) => {
   const dueDateOk = await setDueDate(currentDetailTask.id, detailDueDateInput.value || null);
   if (dueDateOk) closeTaskDetail();
 });
+
+filterSearchInput.addEventListener("input", applyFilters);
+filterPrioritySelect.addEventListener("change", applyFilters);
+filterBlockedOnlyInput.addEventListener("change", applyFilters);
+filterClearBtn.addEventListener("click", clearFilters);
 
 document.querySelectorAll(".task-list").forEach((list) => {
   list.addEventListener("dragover", (event) => {
