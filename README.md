@@ -34,35 +34,45 @@ Open http://127.0.0.1:8000 — the backend serves both the API and the static fr
 python -m pytest
 ```
 
+## Board columns
+
+Four fixed columns: **To Do**, **In Progress**, **In Review**, **Done**. Columns aren't a
+database table — a column "exists" only in the sense that some task currently has that value as
+its `column`; the frontend renders all four regardless of what the API returns.
+
 ## How data is stored
 
 Board state lives in a single SQLite database file, `.kanban_data/kanban.db`, defined via
-SQLAlchemy ORM in `backend/storage.py` (a single `tasks` table — see the `Task` model). There's
-no migration tooling; the schema is created on first run via `Base.metadata.create_all()`.
+SQLAlchemy ORM in `backend/storage.py`. There's no migration tooling; the schema is created on
+first run via `Base.metadata.create_all()`.
 
-Each row has: `id` (integer primary key), `title`, `description`, `column`, `priority`,
-`blocked_by_id` (a self-referential foreign key), and `deleted_at`.
+The `tasks` table has: `id` (integer primary key), `title`, `description`, `column`, `priority`,
+`blocked_by_id` (a self-referential foreign key), `deleted_at`, `archived_at`, `due_date`, and
+`sprint_id` (a nullable foreign key into `sprints`). A separate `task_subtasks` table (FK
+`ondelete="CASCADE"`) holds each task's subtask checklist items, and a `sprints` table (`id`,
+`name`, `start_date`, `end_date`, `status`, `closed_at`) holds sprint records.
 
 - **`id`** is exposed over the API as `"KAN-01"`, `"KAN-02"`, ... (`f"KAN-{id:02d}"`). It's never
   reused: the table uses SQLite's `AUTOINCREMENT` (`sqlite_autoincrement=True`), which guarantees
   the next inserted row's id is always higher than any id the table has ever held, even after a
   row is deleted.
-- **`column`** is just a string (`"To Do"`, `"In Progress"`, `"Done"`) — there's no separate
-  columns table. A column "exists" only in the sense that some task currently has that value; an
-  empty board has no rows and therefore reports no columns at all (the frontend already renders
-  its 3 fixed columns regardless of what the API returns, so this isn't user-visible).
+- **`column`** is just a string — see "Board columns" above.
 - **`blocked_by_id`** is a foreign key back onto `tasks.id`, with `ON DELETE SET NULL`: if a
   blocker task is ever permanently deleted, every task that pointed at it is automatically
   unblocked at the database level rather than being left with a dangling reference. Blocking is
-  independent of `column` — a task in "To Do" or "In Progress" can carry a blocker; a task in
-  "Done" can never have one (see "Blocking rules" below).
+  independent of `column` — a task in "To Do", "In Progress", or "In Review" can carry a blocker;
+  a task in "Done" can never have one (see "Blocking rules" below).
 - **`blocks`** (which tasks does this one block) is **not a column** — it's the SQLAlchemy
   `backref` of the `blocked_by` relationship, computed by the ORM on read.
 - **`priority`** is one of `Low` / `Medium` / `High` / `Urgent`, defaulting to `Medium`.
+- **`due_date`** is optional. Cards past their due date show an "Overdue" badge, suppressed once
+  a task reaches Done.
 - **`deleted_at`** is `NULL` for an active task. Setting it is the entire "soft delete"
   mechanism — the row never moves or changes shape, so restoring is just clearing it back to
   `NULL`. There's no separate `deleted_from` field like an older file-based version of this app
-  had; the row's `column` was never touched by the delete in the first place.
+  had; the trash API exposes the task's own `column` value under that name instead.
+- **`archived_at`** is `NULL` unless the task has been manually archived (see "Archive" below).
+  Independent of `deleted_at` — a task can be trashed or archived, never both at once.
 
 ### Recycle bin
 
@@ -71,12 +81,26 @@ computation both filter to `deleted_at IS NULL`; `GET /api/trash` filters to `de
 NULL`. Restoring just clears the timestamp. Permanently deleting (or emptying the trash) is a
 real `DELETE FROM tasks WHERE ...`.
 
+### Archive
+
+A manual "Archive" action, available only on tasks in the Done column, hides a task from the
+board without touching the trash/soft-delete path — for clearing out long-finished work that
+isn't "deleted," just old. Sets `archived_at` instead of moving or deleting the row. An archive
+panel (mirroring the trash panel's UX) lists archived tasks with an "Unarchive" action, plus a
+bulk "Archive All" for every Done task at once.
+
+### Subtasks
+
+Each task can have an ordered checklist of subtask items (title + done flag), shown as a `3/5`
+progress badge on the card and edited in the task detail modal. Purely manual/advisory — subtask
+completion isn't wired into the Done-column invariants or blocking logic.
+
 ### Blocking rules
 
 Blocking is a flag any task can carry (via `blocked_by`), not a column of its own:
 
-- A task can be blocked while sitting in "To Do" or "In Progress". It shows inline wherever it
-  already is — no separate column, no reordering.
+- A task can be blocked while sitting in "To Do", "In Progress", or "In Review". It shows inline
+  wherever it already is — no separate column, no reordering.
 - A task cannot be marked Done while blocked — moving it to "Done" is rejected (`400`) until it's
   unblocked.
 - A task cannot be blocked *by* something that's already Done — that would mean waiting on work
@@ -86,23 +110,71 @@ Blocking is a flag any task can carry (via `blocked_by`), not a column of its ow
   task applies the same check, in case its blocker became Done (or was itself removed) while it
   sat in the trash.
 
+### Search, filter, and WIP limits (frontend-only)
+
+A toolbar under the header does client-side text filtering across title/description, plus quick
+filters for priority and "blocked only" — pure filtering of the already-fetched board, no
+additional API calls. Each column header also supports an optional WIP cap, editable inline and
+persisted in the browser's `localStorage`; the count badge flags with a warning color when
+exceeded. Both are purely client-side conveniences with no backend involvement.
+
+### JSON export
+
+A "download backup" button dumps every task (active + trashed) as JSON via `GET /api/export`,
+wrapping the same data `GET /api/tasks` and `GET /api/trash` already return.
+
+### Sprints
+
+A lightweight, optional time-boxing layer over the otherwise-continuous board. A banner above the
+board shows the active sprint's name, date range, and days-remaining (or "Ends today" /
+"Nd overdue" once the end date has passed), with Start/End controls — no per-card sprint badge,
+no backlog view, no story points or burndown chart.
+
+- **Starting the very first sprint** (`POST /api/sprints/start`, `{name, duration_weeks}`,
+  1/2/3/4 weeks from today) sweeps up every currently-untagged, non-Done task into it. New tasks
+  auto-join the active sprint on creation. Only one sprint can be active at a time.
+- **Ending a sprint** (`POST /api/sprints/end`, same body shape) does *not* leave the board
+  without an active sprint — it atomically closes the current sprint and creates + activates the
+  next one in a single step, rolling every non-Done task from the closed sprint straight into the
+  new one. The "End Sprint" button opens a form for the next sprint's name/duration (defaulting
+  to 2 weeks, editable) before this happens. Done tasks keep their `sprint_id` pointing at the
+  now-closed sprint permanently, as a historical record — they're the only way to later answer
+  "what shipped in Sprint N."
+- `GET /api/sprints/active` returns the current active sprint, or `null` if none has ever been
+  started.
+
 ## API
 
-| Method | Path                            | Body                                          | Description                            |
-|--------|----------------------------------|------------------------------------------------|-------------------------------------------|
-| GET    | `/api/status`                   | —                                                | Health check                            |
-| GET    | `/api/tasks`                     | —                                                | All columns and their tasks             |
-| POST   | `/api/tasks`                      | `{column, title, description?, blocked_by?, priority?}` | Create a task                  |
-| PUT    | `/api/tasks/{task_id}/move`       | `{to_column}`                                   | Move a task to another column           |
-| PUT    | `/api/tasks/{task_id}/blocked-by` | `{blocked_by}`                                  | Set or clear a task's blocker (`null` clears it) |
-| PUT    | `/api/tasks/{task_id}/priority`   | `{priority}`                                    | Change a task's priority                |
-| DELETE | `/api/tasks/{task_id}`            | —                                                | Delete a task (soft — goes to trash)    |
-| GET    | `/api/trash`                      | —                                                | List trashed tasks                      |
-| POST   | `/api/trash/{task_id}/restore`    | —                                                | Restore a task to its original column   |
-| DELETE | `/api/trash/{task_id}`            | —                                                | Permanently delete one trashed task     |
-| DELETE | `/api/trash`                      | —                                                | Permanently delete everything in trash  |
+| Method | Path                                     | Body                                                       | Description                                    |
+|--------|-------------------------------------------|--------------------------------------------------------------|----------------------------------------------------|
+| GET    | `/api/status`                             | —                                                              | Health check                                    |
+| GET    | `/api/tasks`                              | —                                                              | All columns and their active tasks              |
+| POST   | `/api/tasks`                               | `{column, title, description?, blocked_by?, priority?, due_date?}` | Create a task                          |
+| PUT    | `/api/tasks/{task_id}/move`                | `{to_column}`                                                 | Move a task to another column                   |
+| PUT    | `/api/tasks/{task_id}/blocked-by`          | `{blocked_by}`                                                | Set or clear a task's blocker (`null` clears it) |
+| PUT    | `/api/tasks/{task_id}/priority`            | `{priority}`                                                  | Change a task's priority                        |
+| PUT    | `/api/tasks/{task_id}/due-date`            | `{due_date}`                                                  | Set or clear a task's due date (`null` clears it)|
+| DELETE | `/api/tasks/{task_id}`                     | —                                                              | Delete a task (soft — goes to trash)            |
+| GET    | `/api/tasks/{task_id}/subtasks`            | —                                                              | List a task's subtasks                          |
+| POST   | `/api/tasks/{task_id}/subtasks`            | `{title}`                                                     | Add a subtask                                   |
+| PUT    | `/api/tasks/{task_id}/subtasks/{id}`       | `{title?, done?}`                                             | Update a subtask's title and/or done state       |
+| DELETE | `/api/tasks/{task_id}/subtasks/{id}`       | —                                                              | Delete a subtask                                |
+| POST   | `/api/tasks/{task_id}/archive`             | —                                                              | Archive a Done task                             |
+| POST   | `/api/tasks/archive-done`                  | —                                                              | Archive every task currently in Done             |
+| GET    | `/api/trash`                               | —                                                              | List trashed tasks                              |
+| POST   | `/api/trash/{task_id}/restore`             | —                                                              | Restore a task to its original column           |
+| DELETE | `/api/trash/{task_id}`                     | —                                                              | Permanently delete one trashed task             |
+| DELETE | `/api/trash`                               | —                                                              | Permanently delete everything in trash          |
+| GET    | `/api/archive`                             | —                                                              | List archived tasks                             |
+| POST   | `/api/archive/{task_id}/unarchive`         | —                                                              | Unarchive a task back to Done                    |
+| GET    | `/api/export`                              | —                                                              | Dump all tasks (active + trashed) as JSON        |
+| POST   | `/api/sprints/start`                       | `{name, duration_weeks}`                                       | Start the first sprint (1/2/3/4 weeks)           |
+| POST   | `/api/sprints/end`                         | `{name, duration_weeks}`                                       | End the active sprint and start the next one     |
+| GET    | `/api/sprints/active`                      | —                                                              | The active sprint, or `null` if none              |
 
 `task_id` is the task's own unique ID (e.g. `"KAN-05"`) — stable across moves, returned by
-`GET`/`POST` and passed back as-is to `move`/`blocked-by`/`priority`/`delete`/`restore`.
+`GET`/`POST` and passed back as-is to the endpoints above.
 
 `priority` must be one of `Low`, `Medium`, `High`, `Urgent` — the API returns `400` otherwise.
+
+`duration_weeks` must be one of `1`, `2`, `3`, `4` — the API returns `400` otherwise.
