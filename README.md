@@ -94,6 +94,10 @@ isn't "deleted," just old. Sets `archived_at` instead of moving or deleting the 
 panel (mirroring the trash panel's UX) lists archived tasks with an "Unarchive" action, plus a
 bulk "Archive All" for every Done task at once.
 
+**Disabled pending a redesign (2026-07-13):** the UI entry points (Archive FAB, archive panel,
+per-card archive button, Archive All) are hidden behind `ARCHIVE_ENABLED = false` in
+`frontend/app.js`. The backend endpoints below and any already-archived data are untouched.
+
 ### Subtasks
 
 Each task can have an ordered checklist of subtask items (title + done flag), shown as a `3/5`

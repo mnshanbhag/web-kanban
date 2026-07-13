@@ -26,7 +26,7 @@ advisory — no backend change. Shipped on `feature_wip_limits` (2026-07-09).
 
 ### JSON export (manual backup)
 A "download backup" button dumping all tasks (active + trashed) as JSON — the export half of the
-originally-proposed export/import pair (see remaining import scope under Proposed #6). New
+originally-proposed export/import pair (see remaining import scope under Proposed #3). New
 `GET /api/export` wraps the existing `get_all_boards`/`get_trash`, no new table. Shipped on
 `feature_json_export` (2026-07-13) — also served as a live test that `feature-implementer` can
 use the new `new-endpoint` skill.
@@ -57,6 +57,21 @@ that initial bootstrap case — `start_sprint` itself is unchanged and still the
 create the very first sprint. Done tasks still keep their `sprint_id` pointing at the
 now-closed sprint permanently, as a historical record. Shipped on `feature_scrum_sprints`
 (2026-07-13).
+
+### Per-task activity log (append-only notes)
+A timestamped list of freeform notes on a task, separate from the single mutable `description`.
+New `TaskNote` table (FK `ondelete="CASCADE"`), `GET`/`POST /api/tasks/{task_id}/notes`, and UI
+inside the existing detail modal, newest note first. Notes survive their parent task being
+trashed and restored, and are only removed if the task is permanently deleted; there's no edit or
+delete for an individual note — once added, a note stays. Shipped on `feature_activity_log`
+(2026-07-13).
+
+### "Updated X ago" / activity recency
+An `updated_at` column touched on every content-mutating storage function (`update_task`,
+`set_blocked_by`, `set_due_date`, `move_task` — including the Done-cascade's dependent-clearing
+loop), surfaced on cards via the existing `formatRelativeTime` (already used for the trash panel).
+Not touched by lifecycle-only operations (delete, restore, archive, unarchive). Shipped on
+`feature_updated_at` (2026-07-13).
 
 ---
 
@@ -107,25 +122,7 @@ Free-form labels per task (e.g. "bug", "chore"), shown as chips, filterable.
 - **Tension:** tag *editing* should live in the detail modal only, matching the deliberate
   card-density decision already made for blocking (see `feedback_card_density` in memory).
 
-### 2. Per-task activity log (append-only notes)
-A timestamped list of freeform notes on a task, separate from the single mutable `description`.
-- **Why:** `description` gets overwritten on every edit — no way to keep a running history of
-  what happened on a long-lived task.
-- **Scope:** medium-large — new `TaskNote` table (FK `ondelete="CASCADE"`), new endpoints, UI
-  inside the existing detail modal.
-- **Tension:** `created_at` needs the same `_utc_isoformat()` tzinfo treatment as `deleted_at`/
-  `due_date`. Decide whether notes survive soft-delete/restore (they should, same as the task row).
-
-### 3. "Updated X ago" / activity recency
-An `updated_at` column touched on every mutation, surfaced on cards via the existing
-`formatRelativeTime` (already used for the trash panel).
-- **Why:** at-a-glance staleness signal — e.g. "this In Progress card hasn't moved in 9 days."
-- **Scope:** small-medium — touch it in every mutating storage function (`update_task`,
-  `set_blocked_by`, `move_task`, `set_due_date`, ...).
-- **Tension:** same tzinfo gotcha as above. Easy to miss a mutation path (e.g. the Done-cascade's
-  dependent-clearing loop in `move_task`) — decide upfront whether that counts as "updating."
-
-### 4. Past sprints view
+### 2. Past sprints view
 A way to see closed sprints after the fact — a `GET /api/sprints` list endpoint (most-recent-
 first) plus a small "past sprints" panel in the UI (name, date range, which tasks completed
 during it).
@@ -137,7 +134,7 @@ during it).
   tasks already retain their `sprint_id` after a sprint closes, so "which tasks completed in
   Sprint N" falls out of a simple query once this exists.
 
-### 5. JSON import (manual backup, remainder)
+### 3. JSON import (manual backup, remainder)
 Import side of the export/import pair — the export half was split off and handed to
 `feature-implementer` (see In Progress) as a live test of the `new-endpoint` skill.
 - **Why:** export alone only covers backup, not restore.
@@ -146,22 +143,22 @@ Import side of the export/import pair — the export half was split off and hand
   `AUTOINCREMENT` guarantee has already retired.
 - **Tension:** don't start this until export has shipped and been used at least once.
 
-### 6. Sprint timeline view (last / current / next)
+### 4. Sprint timeline view (last / current / next)
 On startup, show three sprint panels at once — last, current, and next — instead of just a
 current-sprint banner. Last and next are collapsed by default to save space; current stays
 expanded. Explicitly kept as its own later increment, not folded into the Scrum sprints feature's
 first pass (2026-07-13).
-- **Why:** Scrum sprints only ever surfaces the current sprint; #4 (Past sprints view) exposes
+- **Why:** Scrum sprints only ever surfaces the current sprint; #2 (Past sprints view) exposes
   history but only via a separate panel a user has to open. This idea instead puts the immediate
   before/after context of the current sprint on the board by default.
-- **Scope:** medium-to-large, and depends on both Scrum sprints (shipped) and #4. It also adds a
+- **Scope:** medium-to-large, and depends on both Scrum sprints (shipped) and #2. It also adds a
   capability neither of those has: a **pre-planned "next" sprint** — sprints today only come into
   existence when started, so surfacing a real "next sprint" (name + dates, not just a placeholder)
   requires a new `"planned"` `Sprint` status creatable ahead of the current sprint ending, plus
   whatever start-time behavior reconciles a planned sprint with the existing
   auto-start/rollover-sweep logic.
-- **Tension:** don't build this until #4 too (the "last sprint" panel is essentially a size-1
-  version of #4's list). The "planned" status is new surface area on top of the existing `status`
+- **Tension:** don't build this until #2 too (the "last sprint" panel is essentially a size-1
+  version of #2's list). The "planned" status is new surface area on top of the existing `status`
   column (`"active"`/`"closed"` today) — needs its own design pass on how a planned sprint
   transitions to active and what happens if the current sprint is ended early or extended
   relative to a planned sprint's start date.
@@ -169,7 +166,7 @@ first pass (2026-07-13).
 
 ---
 
-### 7. PostgreSQL support (for Vercel deployment)
+### 5. PostgreSQL support (for Vercel deployment)
 Make the storage layer able to run against Postgres instead of (or alongside) SQLite, so the app
 can be deployed to Vercel — Vercel's serverless functions have an ephemeral/read-only-ish
 filesystem, so the current `.kanban_data/kanban.db` file won't reliably persist writes across
@@ -200,7 +197,7 @@ requests once deployed there.
     (`backend/tests/test_tasks_api.py`) — if dual support is kept, tests can keep doing exactly
     this against SQLite; only a manual/CI smoke test would exercise the Postgres path.
   - Moving *existing* local data into a new Postgres instance isn't really "migration" so much as
-    export/import — ties into the JSON export (shipped) and JSON import (#5, not yet built) ideas.
+    export/import — ties into the JSON export (shipped) and JSON import (#3, not yet built) ideas.
 - **Status:** idea only, not scoped down or handed to `feature-implementer` yet — open questions
   above (dual support vs. Postgres-only, Alembic vs. not) need a decision first.
 

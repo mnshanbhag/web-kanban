@@ -73,7 +73,28 @@ key for what's proposed/in-progress/shipped/shelved.
   `timezone.utc` before calling `.isoformat()` — this is the only thing standing between a
   correct "deleted just now" and the frontend's `formatRelativeTime` silently being off by your
   local UTC offset. If you add another datetime column, route it through the same helper (or an
-  equivalent) before it reaches the API.
+  equivalent) before it reaches the API. `Task.updated_at` and `TaskNote.created_at` both go
+  through it too.
+- `Task.updated_at` is bumped by every *content*-mutating storage function (`update_task`,
+  `set_blocked_by`, `set_due_date`, and `move_task` — including on a *dependent* task when the
+  Done-cascade clears its `blocked_by_id`, which counts as an update to that dependent even though
+  the mutating call was against the blocker). It is deliberately **not** touched by lifecycle-only
+  operations (delete, restore, archive, unarchive) — if you add a new mutating storage function,
+  decide explicitly whether it should bump `updated_at` rather than assuming it does.
+- Archive/Unarchive is fully implemented server-side (`archive_task`, `unarchive_task`,
+  `get_archive`, the `archived_at` column) but its frontend entry points are currently **disabled
+  pending a redesign** via `ARCHIVE_ENABLED = false` in `frontend/app.js` — the Archive FAB,
+  archive modal, per-card archive button, and Archive All button are all gated behind that one
+  flag (plus matching `hidden` classes in `index.html`). Don't "fix" the missing UI without
+  checking this flag first; don't build new features against the assumption that Archive is
+  reachable from the UI.
+- Scrum sprints: only one `Sprint` can have `status == "active"` at a time — `start_sprint`
+  raises if one already exists. `end_sprint` never leaves the board without an active sprint: it
+  atomically closes the current sprint and creates+activates the next one in the same call,
+  rolling every non-Done task from the closed sprint into the new one (plus sweeping up any
+  still-untagged non-Done task, the only way that happens being a task created before the very
+  first sprint). Done tasks keep their `sprint_id` pointing at the now-closed sprint permanently
+  as a historical record — don't null it out or reassign it.
 - `frontend/app.js` — no build tooling, no framework. 4 columns (`COLUMNS` = To Do, In Progress,
   In Review, Done — no separate "Blocked" column).
   Talks to the API with `fetch`. Drag-and-drop just calls the move endpoint directly now; there's
