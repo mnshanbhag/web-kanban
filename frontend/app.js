@@ -28,6 +28,10 @@ const detailBlockedByInput = document.getElementById("detail-blocked-by");
 const detailDueDateInput = document.getElementById("detail-due-date");
 const detailSaveBtn = document.getElementById("detail-save-btn");
 const taskDetailCloseBtn = document.getElementById("task-detail-close");
+const detailSubtaskList = document.getElementById("detail-subtask-list");
+const detailSubtaskInput = document.getElementById("detail-subtask-input");
+const detailSubtaskAddBtn = document.getElementById("detail-subtask-add-btn");
+const detailSubtaskProgress = document.getElementById("detail-subtask-progress");
 
 const errorToast = document.getElementById("error-toast");
 
@@ -190,7 +194,12 @@ function createCardElement(column, task) {
   });
   card.appendChild(prioritySelect);
 
-  if (task.blocked_by || (task.blocks && task.blocks.length) || task.due_date) {
+  if (
+    task.blocked_by ||
+    (task.blocks && task.blocks.length) ||
+    task.due_date ||
+    task.subtask_total
+  ) {
     const tags = document.createElement("div");
     tags.className = "card-tags";
 
@@ -217,6 +226,13 @@ function createCardElement(column, task) {
         tag.className = "card-tag due-date";
         tag.textContent = `Due ${formatDueDate(task.due_date)}`;
       }
+      tags.appendChild(tag);
+    }
+
+    if (task.subtask_total) {
+      const tag = document.createElement("span");
+      tag.className = "card-tag subtask-progress";
+      tag.textContent = `${task.subtask_done} / ${task.subtask_total}`;
       tags.appendChild(tag);
     }
 
@@ -326,6 +342,98 @@ async function deleteTask(taskId) {
   await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}`, { method: "DELETE" });
   await loadBoard();
   await refreshTrashBadge();
+}
+
+async function fetchSubtasks(taskId) {
+  const res = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/subtasks`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+async function addSubtask(taskId, title) {
+  const res = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/subtasks`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title }),
+  });
+  if (!res.ok) {
+    await handleApiError(res);
+    return false;
+  }
+  await renderDetailSubtasks(taskId);
+  await loadBoard();
+  return true;
+}
+
+async function toggleSubtask(taskId, subtaskId, done) {
+  const res = await fetch(
+    `${API_BASE}/tasks/${encodeURIComponent(taskId)}/subtasks/${encodeURIComponent(subtaskId)}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ done }),
+    }
+  );
+  if (!res.ok) {
+    await handleApiError(res);
+    return false;
+  }
+  await renderDetailSubtasks(taskId);
+  await loadBoard();
+  return true;
+}
+
+async function deleteSubtask(taskId, subtaskId) {
+  const res = await fetch(
+    `${API_BASE}/tasks/${encodeURIComponent(taskId)}/subtasks/${encodeURIComponent(subtaskId)}`,
+    { method: "DELETE" }
+  );
+  if (!res.ok) {
+    await handleApiError(res);
+    return false;
+  }
+  await renderDetailSubtasks(taskId);
+  await loadBoard();
+  return true;
+}
+
+function createSubtaskItemElement(taskId, subtask) {
+  const item = document.createElement("div");
+  item.className = "subtask-item";
+
+  const checkbox = document.createElement("input");
+  checkbox.type = "checkbox";
+  checkbox.checked = subtask.done;
+  checkbox.addEventListener("change", () => {
+    toggleSubtask(taskId, subtask.id, checkbox.checked);
+  });
+  item.appendChild(checkbox);
+
+  const title = document.createElement("span");
+  title.className = "subtask-item-title";
+  title.textContent = subtask.title;
+  if (subtask.done) title.classList.add("done");
+  item.appendChild(title);
+
+  const deleteBtn = document.createElement("button");
+  deleteBtn.type = "button";
+  deleteBtn.className = "subtask-item-delete";
+  deleteBtn.textContent = "×";
+  deleteBtn.title = "Delete subtask";
+  deleteBtn.addEventListener("click", () => deleteSubtask(taskId, subtask.id));
+  item.appendChild(deleteBtn);
+
+  return item;
+}
+
+async function renderDetailSubtasks(taskId) {
+  const subtasks = await fetchSubtasks(taskId);
+  detailSubtaskList.replaceChildren();
+  for (const subtask of subtasks) {
+    detailSubtaskList.appendChild(createSubtaskItemElement(taskId, subtask));
+  }
+  const done = subtasks.filter((s) => s.done).length;
+  detailSubtaskProgress.textContent = subtasks.length ? `${done} / ${subtasks.length}` : "";
 }
 
 function formatRelativeTime(isoString) {
@@ -537,6 +645,9 @@ function openTaskDetail(column, task) {
   detailBlockedByInput.value = task.blocked_by || "";
   detailDueDateInput.value = task.due_date ? task.due_date.slice(0, 10) : "";
 
+  detailSubtaskInput.value = "";
+  renderDetailSubtasks(task.id);
+
   taskDetailModalOverlay.classList.add("open");
 }
 
@@ -628,6 +739,22 @@ taskForm.addEventListener("submit", async (event) => {
     dueDateInput.value
   );
   if (ok) closeModal();
+});
+
+async function submitDetailSubtask() {
+  if (!currentDetailTask) return;
+  const title = detailSubtaskInput.value.trim();
+  if (!title) return;
+  const ok = await addSubtask(currentDetailTask.id, title);
+  if (ok) detailSubtaskInput.value = "";
+}
+
+detailSubtaskAddBtn.addEventListener("click", submitDetailSubtask);
+detailSubtaskInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    submitDetailSubtask();
+  }
 });
 
 taskDetailForm.addEventListener("submit", async (event) => {

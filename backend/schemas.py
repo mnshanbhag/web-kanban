@@ -30,6 +30,22 @@ class TaskDueDateUpdate(BaseModel):
     due_date: Optional[str] = None
 
 
+class SubtaskCreate(BaseModel):
+    title: str
+
+
+class SubtaskUpdate(BaseModel):
+    title: Optional[str] = None
+    done: Optional[bool] = None
+
+
+class SubtaskOut(BaseModel):
+    id: int
+    title: str
+    done: bool
+    position: int
+
+
 class TaskOut(BaseModel):
     id: str
     title: str
@@ -38,6 +54,8 @@ class TaskOut(BaseModel):
     blocked_by: Optional[str] = None
     blocks: list[str] = []
     due_date: Optional[str] = None
+    subtask_total: int = 0
+    subtask_done: int = 0
 
 
 class TrashedTaskOut(BaseModel):

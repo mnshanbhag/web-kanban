@@ -3,7 +3,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, create_engine, event
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    create_engine,
+    event,
+    func,
+)
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, relationship
 
@@ -35,6 +45,17 @@ class Task(Base):
     blocked_by = relationship(
         "Task", remote_side=[id], backref="blocks", foreign_keys=[blocked_by_id]
     )
+
+
+class TaskSubtask(Base):
+    __tablename__ = "task_subtasks"
+    __table_args__ = {"sqlite_autoincrement": True}
+
+    id = Column(Integer, primary_key=True)
+    task_id = Column(Integer, ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False)
+    title = Column(String, nullable=False)
+    done = Column(Boolean, nullable=False, default=False)
+    position = Column(Integer, nullable=False, default=0)
 
 
 @event.listens_for(Engine, "connect")
@@ -132,7 +153,15 @@ def _assert_title_available(
         raise FileExistsError(f"Task '{title}' already exists in column '{column}'")
 
 
-def _task_to_dict(task: Task) -> dict:
+def _task_to_dict(session: Session, task: Task) -> dict:
+    subtask_total = (
+        session.query(TaskSubtask).filter(TaskSubtask.task_id == task.id).count()
+    )
+    subtask_done = (
+        session.query(TaskSubtask)
+        .filter(TaskSubtask.task_id == task.id, TaskSubtask.done.is_(True))
+        .count()
+    )
     return {
         "id": _display_id(task.id),
         "title": task.title,
@@ -141,6 +170,8 @@ def _task_to_dict(task: Task) -> dict:
         "blocked_by": _display_id(task.blocked_by_id) if task.blocked_by_id else None,
         "blocks": [_display_id(t.id) for t in task.blocks if t.deleted_at is None],
         "due_date": _utc_isoformat(task.due_date) if task.due_date is not None else None,
+        "subtask_total": subtask_total,
+        "subtask_done": subtask_done,
     }
 
 
@@ -154,7 +185,7 @@ def get_all_boards() -> dict[str, list[dict]]:
         )
         board: dict[str, list[dict]] = {}
         for task in tasks:
-            board.setdefault(task.column, []).append(_task_to_dict(task))
+            board.setdefault(task.column, []).append(_task_to_dict(session, task))
         return board
 
 
@@ -334,3 +365,84 @@ def empty_trash() -> int:
             session.delete(task)
         session.commit()
         return count
+
+
+def _subtask_to_dict(subtask: TaskSubtask) -> dict:
+    return {
+        "id": subtask.id,
+        "title": subtask.title,
+        "done": subtask.done,
+        "position": subtask.position,
+    }
+
+
+def _get_subtask(session: Session, task_id: str, subtask_id: int) -> TaskSubtask:
+    task = _get_active_task(session, task_id)
+    subtask = session.get(TaskSubtask, subtask_id)
+    if subtask is None or subtask.task_id != task.id:
+        raise FileNotFoundError(f"Subtask '{subtask_id}' not found on task '{task_id}'")
+    return subtask
+
+
+def get_subtasks(task_id: str) -> list[dict]:
+    with _session() as session:
+        task = _get_active_task(session, task_id)
+        subtasks = (
+            session.query(TaskSubtask)
+            .filter(TaskSubtask.task_id == task.id)
+            .order_by(TaskSubtask.position, TaskSubtask.id)
+            .all()
+        )
+        return [_subtask_to_dict(s) for s in subtasks]
+
+
+def add_subtask(task_id: str, title: str) -> dict:
+    with _session() as session:
+        task = _get_active_task(session, task_id)
+
+        title = title.strip()
+        if not title:
+            raise ValueError("Subtask title cannot be empty")
+
+        max_position = (
+            session.query(func.max(TaskSubtask.position))
+            .filter(TaskSubtask.task_id == task.id)
+            .scalar()
+        )
+        next_position = 0 if max_position is None else max_position + 1
+
+        subtask = TaskSubtask(task_id=task.id, title=title, done=False, position=next_position)
+        session.add(subtask)
+        session.commit()
+        session.refresh(subtask)
+        return _subtask_to_dict(subtask)
+
+
+def update_subtask(
+    task_id: str,
+    subtask_id: int,
+    new_title: Optional[str] = None,
+    new_done: Optional[bool] = None,
+) -> dict:
+    with _session() as session:
+        subtask = _get_subtask(session, task_id, subtask_id)
+
+        if new_title is not None:
+            new_title = new_title.strip()
+            if not new_title:
+                raise ValueError("Subtask title cannot be empty")
+            subtask.title = new_title
+
+        if new_done is not None:
+            subtask.done = new_done
+
+        session.commit()
+        session.refresh(subtask)
+        return _subtask_to_dict(subtask)
+
+
+def delete_subtask(task_id: str, subtask_id: int) -> None:
+    with _session() as session:
+        subtask = _get_subtask(session, task_id, subtask_id)
+        session.delete(subtask)
+        session.commit()

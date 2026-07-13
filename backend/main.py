@@ -12,6 +12,9 @@ from backend.schemas import (
     IdResponse,
     PriorityResponse,
     RestoreResponse,
+    SubtaskCreate,
+    SubtaskOut,
+    SubtaskUpdate,
     TaskBlockedByUpdate,
     TaskCreate,
     TaskDueDateUpdate,
@@ -112,6 +115,42 @@ def set_due_date(task_id: str, body: TaskDueDateUpdate):
 def delete_task(task_id: str):
     try:
         storage.delete_task(task_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/api/tasks/{task_id}/subtasks", response_model=list[SubtaskOut])
+def list_subtasks(task_id: str):
+    try:
+        return storage.get_subtasks(task_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/api/tasks/{task_id}/subtasks", status_code=201, response_model=SubtaskOut)
+def create_subtask(task_id: str, body: SubtaskCreate):
+    try:
+        return storage.add_subtask(task_id, body.title)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.put("/api/tasks/{task_id}/subtasks/{subtask_id}", response_model=SubtaskOut)
+def update_subtask(task_id: str, subtask_id: int, body: SubtaskUpdate):
+    try:
+        return storage.update_subtask(task_id, subtask_id, body.title, body.done)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.delete("/api/tasks/{task_id}/subtasks/{subtask_id}", status_code=204)
+def delete_subtask(task_id: str, subtask_id: int):
+    try:
+        storage.delete_subtask(task_id, subtask_id)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
