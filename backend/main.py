@@ -4,6 +4,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from typing import Optional
+
 from backend import storage
 from backend.schemas import (
     ArchivedTaskOut,
@@ -15,6 +17,8 @@ from backend.schemas import (
     IdResponse,
     PriorityResponse,
     RestoreResponse,
+    SprintOut,
+    SprintStart,
     SubtaskCreate,
     SubtaskOut,
     SubtaskUpdate,
@@ -224,6 +228,27 @@ def unarchive_task(task_id: str):
 @app.get("/api/export", response_model=ExportOut)
 def export_data():
     return {"tasks": storage.get_all_boards(), "trash": storage.get_trash()}
+
+
+@app.post("/api/sprints/start", response_model=SprintOut)
+def start_sprint(body: SprintStart):
+    try:
+        return storage.start_sprint(body.name, body.duration_weeks)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/sprints/end", response_model=SprintOut)
+def end_sprint():
+    try:
+        return storage.end_sprint()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/sprints/active", response_model=Optional[SprintOut])
+def get_active_sprint():
+    return storage.get_active_sprint()
 
 
 app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")

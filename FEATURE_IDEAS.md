@@ -31,6 +31,22 @@ originally-proposed export/import pair (see remaining import scope under Propose
 `feature_json_export` (2026-07-13) — also served as a live test that `feature-implementer` can
 use the new `new-endpoint` skill.
 
+### Scrum sprints
+A lightweight, optional time-boxing layer over the existing continuous board: start a named
+sprint with a fixed duration (1/2/3/4 weeks, picked from today), and a banner above the board
+shows its name/date range/days-remaining with Start/End Sprint controls. No backlog view, no
+story points, no burndown/velocity chart — deliberately scoped down from "full Scrum" to just
+sprints. New `Sprint` table (`sprints`: name, start_date, end_date, status, closed_at) plus a
+nullable `Task.sprint_id` FK (`ondelete="SET NULL"`, same shape as the existing `blocked_by_id`
+self-FK); `start_sprint`/`end_sprint`/`get_active_sprint` storage functions;
+`POST /api/sprints/start`, `POST /api/sprints/end`, `GET /api/sprints/active`; a banner + small
+"Start Sprint" modal in the frontend (no per-card badge — keeps the existing card-density
+decision intact). Tasks auto-join the active sprint on creation; ending a sprint clears the
+sprint tag from any non-Done task in it, and starting the next sprint sweeps up every
+currently-untagged, non-Done task (the "incomplete work rolls forward" mechanism). Done tasks
+keep their `sprint_id` permanently as a historical record. Shipped on `feature_scrum_sprints`
+(2026-07-13).
+
 ---
 
 ## 🚧 In Progress
@@ -95,48 +111,19 @@ An `updated_at` column touched on every mutation, surfaced on cards via the exis
 - **Tension:** same tzinfo gotcha as above. Easy to miss a mutation path (e.g. the Done-cascade's
   dependent-clearing loop in `move_task`) — decide upfront whether that counts as "updating."
 
-### 4. Scrum sprints
-A lightweight, optional time-boxing layer over the existing continuous board: start a named
-sprint with a fixed duration (1/2/3/4 weeks, picked from today), and a banner above the board
-shows its name/date range/days-remaining with Start/End Sprint controls. No backlog view, no
-story points, no burndown/velocity chart — deliberately scoped down from "full Scrum" to just
-sprints, after asking the user which Scrum concepts they actually wanted (2026-07-13).
-- **Why:** the board currently has no sense of time-boxing; tasks sit in a column indefinitely.
-- **Scope:** medium — new `Sprint` table (`sprints`: name, start_date, end_date, status,
-  closed_at) plus a nullable `Task.sprint_id` FK (`ondelete="SET NULL"`, same shape as the
-  existing `blocked_by_id` self-FK); `start`/`end`/`get_active` storage functions; 3 endpoints;
-  a banner + small "Start Sprint" modal in the frontend (no per-card badge — keeps the existing
-  card-density decision intact).
-- **Design decisions already made** (via clarifying questions with the user, not yet built):
-  tasks auto-join the active sprint on creation (no manual per-task assignment, consistent with
-  "no backlog" — there's no separate unscheduled pool to manage); ending a sprint clears the
-  sprint tag from any non-Done task in it, and starting the *next* sprint sweeps up every
-  currently-untagged, non-Done task — this single sweep mechanism is what makes "incomplete work
-  rolls forward" work without needing a dedicated backlog/holding state. Done tasks keep their
-  `sprint_id` permanently as a historical record (unused today, but cheap to keep for a future
-  velocity/burndown feature).
-- **Tension:** no schema-migration mechanism exists in this app — adding `Task.sprint_id` to an
-  already-created `.kanban_data/kanban.db` needs the file deleted once after this ships (`create_all`
-  only creates missing tables, doesn't `ALTER` existing ones), same as prior column additions.
-- **Status:** idea only, explicitly not handed to `feature-implementer` yet — the user wants to
-  sit with it and possibly refine scope before building.
-
-### 5. Past sprints view
+### 4. Past sprints view
 A way to see closed sprints after the fact — a `GET /api/sprints` list endpoint (most-recent-
 first) plus a small "past sprints" panel in the UI (name, date range, which tasks completed
 during it).
-- **Why:** the Scrum sprints idea (#4) as scoped closes a sprint by flipping its `status` to
+- **Why:** the Scrum sprints feature (shipped) closes a sprint by flipping its `status` to
   `"closed"` and clearing `sprint_id` off any non-Done task in it, but never exposes closed
   sprints anywhere — the data sits inert in the `sprints` table with no way to look back at it.
-- **Scope:** small, and purely additive on top of #4's schema — no new columns, just a list
-  endpoint (mirrors `get_trash()`/`get_archive()`'s pattern) and a read-only view. Done tasks
-  already retain their `sprint_id` after a sprint closes, so "which tasks completed in Sprint N"
-  falls out of a simple query once this exists.
-- **Tension:** depends on #4 (Scrum sprints) shipping first — there's no `sprints` table without
-  it. Keep this a separate, later increment rather than folding it into #4's initial scope, per
-  the user's explicit call (2026-07-13) to keep the first pass minimal.
+- **Scope:** small, and purely additive on top of Scrum sprints' schema — no new columns, just a
+  list endpoint (mirrors `get_trash()`/`get_archive()`'s pattern) and a read-only view. Done
+  tasks already retain their `sprint_id` after a sprint closes, so "which tasks completed in
+  Sprint N" falls out of a simple query once this exists.
 
-### 6. JSON import (manual backup, remainder)
+### 5. JSON import (manual backup, remainder)
 Import side of the export/import pair — the export half was split off and handed to
 `feature-implementer` (see In Progress) as a live test of the `new-endpoint` skill.
 - **Why:** export alone only covers backup, not restore.
@@ -145,29 +132,30 @@ Import side of the export/import pair — the export half was split off and hand
   `AUTOINCREMENT` guarantee has already retired.
 - **Tension:** don't start this until export has shipped and been used at least once.
 
-### 7. Sprint timeline view (last / current / next)
+### 6. Sprint timeline view (last / current / next)
 On startup, show three sprint panels at once — last, current, and next — instead of just a
 current-sprint banner. Last and next are collapsed by default to save space; current stays
-expanded. Explicitly kept as its own later increment, not folded into #4's first pass (2026-07-13).
-- **Why:** #4 (Scrum sprints) only ever surfaces the current sprint; #5 (Past sprints view) exposes
+expanded. Explicitly kept as its own later increment, not folded into the Scrum sprints feature's
+first pass (2026-07-13).
+- **Why:** Scrum sprints only ever surfaces the current sprint; #4 (Past sprints view) exposes
   history but only via a separate panel a user has to open. This idea instead puts the immediate
   before/after context of the current sprint on the board by default.
-- **Scope:** medium-to-large, and depends on both #4 and #5. It also adds a capability neither of
-  those has: a **pre-planned "next" sprint** — sprints today only come into existence when
-  started, so surfacing a real "next sprint" (name + dates, not just a placeholder) requires a new
-  `"planned"` `Sprint` status creatable ahead of the current sprint ending, plus whatever
-  start-time behavior reconciles a planned sprint with the existing auto-start/rollover-sweep
-  logic in #4.
-- **Tension:** don't build this until #4 ships (no `sprints` table yet) and ideally #5 too (the
-  "last sprint" panel is essentially a size-1 version of #5's list). The "planned" status is new
-  surface area on top of #4's `status` column (`"active"`/`"closed"` today) — needs its own design
-  pass on how a planned sprint transitions to active and what happens if the current sprint is
-  ended early or extended relative to a planned sprint's start date.
+- **Scope:** medium-to-large, and depends on both Scrum sprints (shipped) and #4. It also adds a
+  capability neither of those has: a **pre-planned "next" sprint** — sprints today only come into
+  existence when started, so surfacing a real "next sprint" (name + dates, not just a placeholder)
+  requires a new `"planned"` `Sprint` status creatable ahead of the current sprint ending, plus
+  whatever start-time behavior reconciles a planned sprint with the existing
+  auto-start/rollover-sweep logic.
+- **Tension:** don't build this until #4 too (the "last sprint" panel is essentially a size-1
+  version of #4's list). The "planned" status is new surface area on top of the existing `status`
+  column (`"active"`/`"closed"` today) — needs its own design pass on how a planned sprint
+  transitions to active and what happens if the current sprint is ended early or extended
+  relative to a planned sprint's start date.
 - **Status:** idea only, not scoped in detail yet, not handed to `feature-implementer`.
 
 ---
 
-### 8. PostgreSQL support (for Vercel deployment)
+### 7. PostgreSQL support (for Vercel deployment)
 Make the storage layer able to run against Postgres instead of (or alongside) SQLite, so the app
 can be deployed to Vercel — Vercel's serverless functions have an ephemeral/read-only-ish
 filesystem, so the current `.kanban_data/kanban.db` file won't reliably persist writes across
@@ -190,14 +178,15 @@ requests once deployed there.
     round-trips; Postgres's `TIMESTAMP WITH TIME ZONE` doesn't have that problem, so the helper
     may need to become a no-op (or conditional) on Postgres rather than being removed outright —
     removing it would break the SQLite path if dual support is kept.
-  - No schema-migration tool exists today (`create_all`-only, per the Scrum sprints idea's
-    tension, #4) — decide whether this is finally the moment to introduce Alembic, or whether
-    `create_all` is still good enough for a fresh Postgres database.
+  - No schema-migration tool exists today (`create_all`-only, a tension the Scrum sprints feature
+    already hit and worked around with a one-time manual DB-file deletion) — decide whether this
+    is finally the moment to introduce Alembic, or whether `create_all` is still good enough for a
+    fresh Postgres database.
   - Existing tests monkeypatch `storage.DATA_DIR` to point SQLite at a `tmp_path`
     (`backend/tests/test_tasks_api.py`) — if dual support is kept, tests can keep doing exactly
     this against SQLite; only a manual/CI smoke test would exercise the Postgres path.
   - Moving *existing* local data into a new Postgres instance isn't really "migration" so much as
-    export/import — ties into the JSON export (shipped) and JSON import (#6, not yet built) ideas.
+    export/import — ties into the JSON export (shipped) and JSON import (#5, not yet built) ideas.
 - **Status:** idea only, not scoped down or handed to `feature-implementer` yet — open questions
   above (dual support vs. Postgres-only, Alembic vs. not) need a decision first.
 

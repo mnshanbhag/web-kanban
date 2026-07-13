@@ -65,6 +65,19 @@ const filterPrioritySelect = document.getElementById("filter-priority");
 const filterBlockedOnlyInput = document.getElementById("filter-blocked-only");
 const filterClearBtn = document.getElementById("filter-clear");
 
+const sprintBannerActive = document.getElementById("sprint-banner-active");
+const sprintBannerInactive = document.getElementById("sprint-banner-inactive");
+const sprintBannerName = document.getElementById("sprint-banner-name");
+const sprintBannerDates = document.getElementById("sprint-banner-dates");
+const sprintBannerDays = document.getElementById("sprint-banner-days");
+const startSprintBtn = document.getElementById("start-sprint-btn");
+const endSprintBtn = document.getElementById("end-sprint-btn");
+const sprintModalOverlay = document.getElementById("sprint-modal-overlay");
+const sprintForm = document.getElementById("sprint-form");
+const sprintNameInput = document.getElementById("sprint-name");
+const sprintDurationSelect = document.getElementById("sprint-duration");
+const sprintModalCancelBtn = document.getElementById("sprint-modal-cancel");
+
 let toastTimer = null;
 let pendingConfirmAction = null;
 let currentDetailTask = null;
@@ -688,6 +701,90 @@ async function downloadExport() {
   URL.revokeObjectURL(url);
 }
 
+async function fetchActiveSprint() {
+  const res = await fetch(`${API_BASE}/sprints/active`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
+function formatSprintDate(dateString) {
+  return new Date(`${dateString}T00:00:00`).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function formatDaysRemaining(endDateString) {
+  const end = new Date(`${endDateString}T00:00:00`);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const days = Math.round((end.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+  if (days > 1) return { label: `${days} days left`, overdue: false };
+  if (days === 1) return { label: "1 day left", overdue: false };
+  if (days === 0) return { label: "Ends today", overdue: false };
+  return { label: `${Math.abs(days)}d overdue`, overdue: true };
+}
+
+function renderSprintBanner(sprint) {
+  if (!sprint) {
+    sprintBannerActive.classList.add("hidden");
+    sprintBannerInactive.classList.remove("hidden");
+    return;
+  }
+
+  sprintBannerInactive.classList.add("hidden");
+  sprintBannerActive.classList.remove("hidden");
+
+  sprintBannerName.textContent = sprint.name;
+  sprintBannerDates.textContent = `${formatSprintDate(sprint.start_date)} – ${formatSprintDate(sprint.end_date)}`;
+
+  const { label, overdue } = formatDaysRemaining(sprint.end_date);
+  sprintBannerDays.textContent = label;
+  sprintBannerDays.classList.toggle("overdue", overdue);
+}
+
+async function refreshSprintBanner() {
+  const sprint = await fetchActiveSprint();
+  renderSprintBanner(sprint);
+}
+
+async function startSprint(name, durationWeeks) {
+  const res = await fetch(`${API_BASE}/sprints/start`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, duration_weeks: durationWeeks }),
+  });
+  if (!res.ok) {
+    await handleApiError(res);
+    return false;
+  }
+  await refreshSprintBanner();
+  await loadBoard();
+  return true;
+}
+
+async function endSprint() {
+  const res = await fetch(`${API_BASE}/sprints/end`, { method: "POST" });
+  if (!res.ok) {
+    await handleApiError(res);
+    return;
+  }
+  await refreshSprintBanner();
+  await loadBoard();
+}
+
+function openSprintModal() {
+  sprintNameInput.value = "";
+  sprintDurationSelect.value = "2";
+  sprintModalOverlay.classList.add("open");
+  sprintNameInput.focus();
+}
+
+function closeSprintModal() {
+  sprintModalOverlay.classList.remove("open");
+}
+
 function applyFilters() {
   const query = filterSearchInput.value.trim().toLowerCase();
   const priority = filterPrioritySelect.value;
@@ -877,12 +974,35 @@ confirmModalOverlay.addEventListener("click", (event) => {
   if (event.target === confirmModalOverlay) closeConfirmModal();
 });
 
+startSprintBtn.addEventListener("click", openSprintModal);
+sprintModalCancelBtn.addEventListener("click", closeSprintModal);
+
+sprintModalOverlay.addEventListener("click", (event) => {
+  if (event.target === sprintModalOverlay) closeSprintModal();
+});
+
+sprintForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const name = sprintNameInput.value.trim();
+  if (!name) return;
+  const ok = await startSprint(name, parseInt(sprintDurationSelect.value, 10));
+  if (ok) closeSprintModal();
+});
+
+endSprintBtn.addEventListener("click", () => {
+  confirmAction(
+    "End the current sprint? Incomplete tasks will be removed from it.",
+    endSprint
+  );
+});
+
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape") return;
   if (confirmModalOverlay.classList.contains("open")) closeConfirmModal();
   else if (taskDetailModalOverlay.classList.contains("open")) closeTaskDetail();
   else if (trashModalOverlay.classList.contains("open")) closeTrashModal();
   else if (archiveModalOverlay.classList.contains("open")) closeArchiveModal();
+  else if (sprintModalOverlay.classList.contains("open")) closeSprintModal();
   else if (modalOverlay.classList.contains("open")) closeModal();
 });
 
@@ -958,3 +1078,4 @@ document.querySelectorAll(".task-list").forEach((list) => {
 loadBoard();
 refreshTrashBadge();
 refreshArchiveBadge();
+refreshSprintBanner();

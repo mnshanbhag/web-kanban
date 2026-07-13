@@ -61,6 +61,24 @@
     <button type="button" class="filter-clear hidden" id="filter-clear">Clear filters</button>
   </div>
 
+  <div class="sprint-banner" id="sprint-banner">
+    <div class="sprint-banner-active hidden" id="sprint-banner-active">
+      <div class="sprint-banner-info">
+        <svg class="sprint-banner-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"></path>
+        </svg>
+        <span class="sprint-banner-name" id="sprint-banner-name"></span>
+        <span class="sprint-banner-dates" id="sprint-banner-dates"></span>
+        <span class="sprint-banner-days" id="sprint-banner-days"></span>
+      </div>
+      <button type="button" class="btn-secondary danger" id="end-sprint-btn">End Sprint</button>
+    </div>
+    <div class="sprint-banner-inactive hidden" id="sprint-banner-inactive">
+      <span class="sprint-banner-inactive-text">No active sprint</span>
+      <button type="button" class="btn-primary" id="start-sprint-btn">Start Sprint</button>
+    </div>
+  </div>
+
   <main class="board" id="board">
     <section class="column" data-column="To Do">
       <div class="column-header">
@@ -179,6 +197,29 @@
         <div class="modal-actions">
           <button type="button" class="btn-secondary" id="task-detail-close">Close</button>
           <button type="submit" class="btn-primary" id="detail-save-btn">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="sprint-modal-overlay">
+    <div class="modal">
+      <h3>Start Sprint</h3>
+      <form id="sprint-form">
+        <label for="sprint-name">Name</label>
+        <input type="text" id="sprint-name" required maxlength="120" placeholder="e.g. Sprint 12" />
+
+        <label for="sprint-duration">Duration</label>
+        <select id="sprint-duration">
+          <option value="1">1 week</option>
+          <option value="2" selected>2 weeks</option>
+          <option value="3">3 weeks</option>
+          <option value="4">4 weeks</option>
+        </select>
+
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" id="sprint-modal-cancel">Cancel</button>
+          <button type="submit" class="btn-primary">Start Sprint</button>
         </div>
       </form>
     </div>

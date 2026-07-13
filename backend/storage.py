@@ -1,11 +1,12 @@
 import threading
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
 from sqlalchemy import (
     Boolean,
     Column,
+    Date,
     DateTime,
     ForeignKey,
     Integer,
@@ -24,9 +25,25 @@ DONE_COLUMN = "Done"
 PRIORITIES = ("Low", "Medium", "High", "Urgent")
 DEFAULT_PRIORITY = "Medium"
 
+SPRINT_STATUS_ACTIVE = "active"
+SPRINT_STATUS_CLOSED = "closed"
+SPRINT_DURATIONS_WEEKS = (1, 2, 3, 4)
+
 
 class Base(DeclarativeBase):
     pass
+
+
+class Sprint(Base):
+    __tablename__ = "sprints"
+    __table_args__ = {"sqlite_autoincrement": True}
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    start_date = Column(Date, nullable=False)
+    end_date = Column(Date, nullable=False)
+    status = Column(String, nullable=False, default=SPRINT_STATUS_ACTIVE)
+    closed_at = Column(DateTime, nullable=True)
 
 
 class Task(Base):
@@ -42,6 +59,7 @@ class Task(Base):
     deleted_at = Column(DateTime, nullable=True)
     archived_at = Column(DateTime, nullable=True)
     due_date = Column(DateTime, nullable=True)
+    sprint_id = Column(Integer, ForeignKey("sprints.id", ondelete="SET NULL"), nullable=True)
 
     blocked_by = relationship(
         "Task", remote_side=[id], backref="blocks", foreign_keys=[blocked_by_id]
@@ -221,6 +239,10 @@ def add_task(
 
         parsed_due_date = datetime.fromisoformat(due_date) if due_date else None
 
+        active_sprint = (
+            session.query(Sprint).filter(Sprint.status == SPRINT_STATUS_ACTIVE).first()
+        )
+
         task = Task(
             title=title,
             description=description,
@@ -228,6 +250,7 @@ def add_task(
             priority=priority,
             blocked_by_id=blocked_by_id,
             due_date=parsed_due_date,
+            sprint_id=active_sprint.id if active_sprint is not None else None,
         )
         session.add(task)
         session.commit()
@@ -527,3 +550,110 @@ def get_archive() -> list[dict]:
             }
             for t in tasks
         ]
+
+
+def _validate_sprint_duration(duration_weeks: int) -> int:
+    if duration_weeks not in SPRINT_DURATIONS_WEEKS:
+        raise ValueError(
+            "duration_weeks must be one of "
+            f"{', '.join(str(d) for d in SPRINT_DURATIONS_WEEKS)}"
+        )
+    return duration_weeks
+
+
+def _sprint_to_dict(sprint: Sprint) -> dict:
+    return {
+        "id": sprint.id,
+        "name": sprint.name,
+        "start_date": sprint.start_date.isoformat(),
+        "end_date": sprint.end_date.isoformat(),
+        "status": sprint.status,
+        "closed_at": _utc_isoformat(sprint.closed_at) if sprint.closed_at is not None else None,
+    }
+
+
+def get_active_sprint() -> Optional[dict]:
+    with _session() as session:
+        sprint = (
+            session.query(Sprint).filter(Sprint.status == SPRINT_STATUS_ACTIVE).first()
+        )
+        return _sprint_to_dict(sprint) if sprint is not None else None
+
+
+def start_sprint(name: str, duration_weeks: int) -> dict:
+    """Start a new sprint. Only one sprint may be active at a time.
+
+    Sweeps up every currently-untagged (sprint_id IS NULL), non-Done, active
+    task and tags it with the new sprint's id — this is the "incomplete work
+    rolls forward" mechanism, since there's no separate backlog/holding state
+    in this scope.
+    """
+    name = name.strip()
+    if not name:
+        raise ValueError("Sprint name cannot be empty")
+    duration_weeks = _validate_sprint_duration(duration_weeks)
+
+    with _session() as session:
+        existing = (
+            session.query(Sprint).filter(Sprint.status == SPRINT_STATUS_ACTIVE).first()
+        )
+        if existing is not None:
+            raise ValueError("A sprint is already active")
+
+        start = date.today()
+        end = start + timedelta(weeks=duration_weeks)
+        sprint = Sprint(
+            name=name, start_date=start, end_date=end, status=SPRINT_STATUS_ACTIVE
+        )
+        session.add(sprint)
+        session.flush()
+
+        untagged_tasks = (
+            session.query(Task)
+            .filter(
+                Task.sprint_id.is_(None),
+                Task.column != DONE_COLUMN,
+                Task.deleted_at.is_(None),
+                Task.archived_at.is_(None),
+            )
+            .all()
+        )
+        for task in untagged_tasks:
+            task.sprint_id = sprint.id
+
+        session.commit()
+        session.refresh(sprint)
+        return _sprint_to_dict(sprint)
+
+
+def end_sprint() -> dict:
+    """Close the active sprint.
+
+    Clears sprint_id (back to NULL) on every non-Done task that was in it.
+    Done tasks keep their sprint_id permanently as a historical record.
+    """
+    with _session() as session:
+        sprint = (
+            session.query(Sprint).filter(Sprint.status == SPRINT_STATUS_ACTIVE).first()
+        )
+        if sprint is None:
+            raise ValueError("No sprint is currently active")
+
+        sprint.status = SPRINT_STATUS_CLOSED
+        sprint.closed_at = datetime.now(timezone.utc)
+
+        active_tasks = (
+            session.query(Task)
+            .filter(
+                Task.sprint_id == sprint.id,
+                Task.column != DONE_COLUMN,
+                Task.deleted_at.is_(None),
+            )
+            .all()
+        )
+        for task in active_tasks:
+            task.sprint_id = None
+
+        session.commit()
+        session.refresh(sprint)
+        return _sprint_to_dict(sprint)
