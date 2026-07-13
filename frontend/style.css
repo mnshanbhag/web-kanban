@@ -621,8 +621,10 @@ body {
 
 .card-tags {
   display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
   margin-top: 0.5rem;
 }
 
@@ -675,7 +677,6 @@ body {
   border: none;
   border-radius: 999px;
   padding: 0.15rem 1.3rem 0.15rem 0.55rem;
-  margin-top: 0.4rem;
   cursor: pointer;
   color: white;
   background-color: var(--priority-medium);
