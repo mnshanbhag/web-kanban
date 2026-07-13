@@ -49,7 +49,8 @@ first run via `Base.metadata.create_all()`.
 The `tasks` table has: `id` (integer primary key), `title`, `description`, `column`, `priority`,
 `blocked_by_id` (a self-referential foreign key), `deleted_at`, `archived_at`, `due_date`, and
 `updated_at`. A separate `task_subtasks` table (FK `ondelete="CASCADE"`) holds each task's
-subtask checklist items.
+subtask checklist items, and a `task_notes` table (same FK shape) holds each task's activity log
+entries.
 
 - **`id`** is exposed over the API as `"KAN-01"`, `"KAN-02"`, ... (`f"KAN-{id:02d}"`). It's never
   reused: the table uses SQLite's `AUTOINCREMENT` (`sqlite_autoincrement=True`), which guarantees
@@ -97,6 +98,14 @@ bulk "Archive All" for every Done task at once.
 Each task can have an ordered checklist of subtask items (title + done flag), shown as a `3/5`
 progress badge on the card and edited in the task detail modal. Purely manual/advisory — subtask
 completion isn't wired into the Done-column invariants or blocking logic.
+
+### Activity log
+
+A timestamped, append-only list of freeform notes per task, separate from the single mutable
+`description` — a running history of what happened on a long-lived task, edited in the task
+detail modal, newest note first. Backed by a `task_notes` table (FK `ondelete="CASCADE"`); notes
+survive their parent task being trashed and restored, and are only removed if the task is
+permanently deleted. There's no edit or delete for an individual note — once added, a note stays.
 
 ### Activity recency
 
@@ -148,6 +157,8 @@ wrapping the same data `GET /api/tasks` and `GET /api/trash` already return.
 | POST   | `/api/tasks/{task_id}/subtasks`            | `{title}`                                                     | Add a subtask                                   |
 | PUT    | `/api/tasks/{task_id}/subtasks/{id}`       | `{title?, done?}`                                             | Update a subtask's title and/or done state       |
 | DELETE | `/api/tasks/{task_id}/subtasks/{id}`       | —                                                              | Delete a subtask                                |
+| GET    | `/api/tasks/{task_id}/notes`               | —                                                              | List a task's activity log notes, newest first   |
+| POST   | `/api/tasks/{task_id}/notes`               | `{body}`                                                       | Append a note to a task's activity log           |
 | POST   | `/api/tasks/{task_id}/archive`             | —                                                              | Archive a Done task                             |
 | POST   | `/api/tasks/archive-done`                  | —                                                              | Archive every task currently in Done             |
 | GET    | `/api/trash`                               | —                                                              | List trashed tasks                              |

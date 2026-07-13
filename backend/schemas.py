@@ -46,6 +46,16 @@ class SubtaskOut(BaseModel):
     position: int
 
 
+class NoteCreate(BaseModel):
+    body: str
+
+
+class NoteOut(BaseModel):
+    id: int
+    body: str
+    created_at: str
+
+
 class TaskOut(BaseModel):
     id: str
     title: str

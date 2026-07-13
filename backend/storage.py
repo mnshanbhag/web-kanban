@@ -60,6 +60,16 @@ class TaskSubtask(Base):
     position = Column(Integer, nullable=False, default=0)
 
 
+class TaskNote(Base):
+    __tablename__ = "task_notes"
+    __table_args__ = {"sqlite_autoincrement": True}
+
+    id = Column(Integer, primary_key=True)
+    task_id = Column(Integer, ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False)
+    body = Column(String, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+
+
 @event.listens_for(Engine, "connect")
 def _enable_foreign_keys(dbapi_connection, _connection_record):
     cursor = dbapi_connection.cursor()
@@ -467,6 +477,41 @@ def delete_subtask(task_id: str, subtask_id: int) -> None:
         subtask = _get_subtask(session, task_id, subtask_id)
         session.delete(subtask)
         session.commit()
+
+
+def _note_to_dict(note: TaskNote) -> dict:
+    return {
+        "id": note.id,
+        "body": note.body,
+        "created_at": _utc_isoformat(note.created_at),
+    }
+
+
+def get_notes(task_id: str) -> list[dict]:
+    with _session() as session:
+        task = _get_active_task(session, task_id)
+        notes = (
+            session.query(TaskNote)
+            .filter(TaskNote.task_id == task.id)
+            .order_by(TaskNote.created_at.desc(), TaskNote.id.desc())
+            .all()
+        )
+        return [_note_to_dict(n) for n in notes]
+
+
+def add_note(task_id: str, body: str) -> dict:
+    with _session() as session:
+        task = _get_active_task(session, task_id)
+
+        body = body.strip()
+        if not body:
+            raise ValueError("Note body cannot be empty")
+
+        note = TaskNote(task_id=task.id, body=body, created_at=datetime.now(timezone.utc))
+        session.add(note)
+        session.commit()
+        session.refresh(note)
+        return _note_to_dict(note)
 
 
 def archive_task(task_id: str) -> None:
