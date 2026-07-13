@@ -7,6 +7,11 @@ const PRIORITIES = ["Low", "Medium", "High", "Urgent"];
 
 const WIP_LIMITS_STORAGE_KEY = "canban-wip-limits";
 
+// Archive/Unarchive is disabled pending a redesign. UI entry points are
+// hidden in index.html; this also stops the frontend from creating the
+// per-card archive button or polling the archive badge.
+const ARCHIVE_ENABLED = false;
+
 const modalOverlay = document.getElementById("modal-overlay");
 const taskForm = document.getElementById("task-form");
 const titleInput = document.getElementById("task-title");
@@ -278,7 +283,7 @@ function createCardElement(column, task) {
     card.appendChild(updated);
   }
 
-  if (column === DONE_COLUMN) {
+  if (ARCHIVE_ENABLED && column === DONE_COLUMN) {
     const archiveBtn = document.createElement("button");
     archiveBtn.className = "card-archive";
     archiveBtn.draggable = false;
@@ -1159,5 +1164,5 @@ document.querySelectorAll(".task-list").forEach((list) => {
 
 loadBoard();
 refreshTrashBadge();
-refreshArchiveBadge();
+if (ARCHIVE_ENABLED) refreshArchiveBadge();
 refreshSprintBanner();

@@ -91,6 +91,9 @@ existing trash panel's UX — lists archived tasks with an "Unarchive" action.
   can't be both). Only Done tasks should be archivable — enforce it server-side, not just by
   hiding the button.
 - Handed to `feature-implementer` (2026-07-13).
+- **Disabled (2026-07-13):** UI entry points hidden pending a redesign — see
+  `ARCHIVE_ENABLED` in `frontend/app.js`. Backend endpoints and existing archived data are
+  untouched; re-enabling is a one-line flip once the redesign lands.
 
 ---
 
