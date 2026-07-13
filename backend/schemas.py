@@ -83,3 +83,7 @@ class RestoreResponse(BaseModel):
 
 class EmptyTrashResponse(BaseModel):
     deleted: int
+
+
+class ArchiveAllResponse(BaseModel):
+    archived: int

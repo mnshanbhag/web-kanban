@@ -363,6 +363,25 @@ def archive_task(task_id: str) -> None:
         session.commit()
 
 
+def archive_all_done() -> int:
+    """Archive every active Done task in one shot. Returns the number archived."""
+    with _session() as session:
+        tasks = (
+            session.query(Task)
+            .filter(
+                Task.column == DONE_COLUMN,
+                Task.deleted_at.is_(None),
+                Task.archived_at.is_(None),
+            )
+            .all()
+        )
+        now = datetime.now(timezone.utc)
+        for task in tasks:
+            task.archived_at = now
+        session.commit()
+        return len(tasks)
+
+
 def unarchive_task(task_id: str) -> None:
     """Unarchive a task, making it visible on the board again.
 

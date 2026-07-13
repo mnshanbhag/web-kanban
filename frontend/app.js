@@ -47,6 +47,7 @@ const archiveModalOverlay = document.getElementById("archive-modal-overlay");
 const archiveList = document.getElementById("archive-list");
 const archiveEmptyMessage = document.getElementById("archive-empty-message");
 const archiveModalClose = document.getElementById("archive-modal-close");
+const archiveAllBtn = document.getElementById("archive-all-btn");
 
 const confirmModalOverlay = document.getElementById("confirm-modal-overlay");
 const confirmMessage = document.getElementById("confirm-message");
@@ -88,6 +89,7 @@ function renderBoard(board) {
     countEl.textContent = tasks.length;
     syncWipLimitInput(column);
     updateWipLimitIndicator(column, tasks.length);
+    if (column === DONE_COLUMN) archiveAllBtn.disabled = tasks.length === 0;
   }
   applyFilters();
 }
@@ -355,6 +357,16 @@ async function archiveTask(taskId) {
   const res = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/archive`, {
     method: "POST",
   });
+  if (!res.ok) {
+    await handleApiError(res);
+    return;
+  }
+  await loadBoard();
+  await refreshArchiveBadge();
+}
+
+async function archiveAllDone() {
+  const res = await fetch(`${API_BASE}/tasks/archive-done`, { method: "POST" });
   if (!res.ok) {
     await handleApiError(res);
     return;
@@ -709,6 +721,8 @@ trashModalOverlay.addEventListener("click", (event) => {
 emptyTrashBtn.addEventListener("click", () => {
   confirmAction("Permanently delete every task in the recycle bin? This can't be undone.", emptyTrash);
 });
+
+archiveAllBtn.addEventListener("click", archiveAllDone);
 
 archiveFab.addEventListener("click", openArchiveModal);
 archiveModalClose.addEventListener("click", closeArchiveModal);

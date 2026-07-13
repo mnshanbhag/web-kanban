@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from backend import storage
 from backend.schemas import (
     ArchivedTaskOut,
+    ArchiveAllResponse,
     BlockedByResponse,
     DueDateResponse,
     EmptyTrashResponse,
@@ -126,6 +127,12 @@ def archive_task(task_id: str):
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"id": task_id}
+
+
+@app.post("/api/tasks/archive-done", response_model=ArchiveAllResponse)
+def archive_all_done():
+    count = storage.archive_all_done()
+    return {"archived": count}
 
 
 @app.get("/api/trash", response_model=list[TrashedTaskOut])

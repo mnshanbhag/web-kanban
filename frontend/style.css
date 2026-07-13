@@ -729,6 +729,30 @@ body {
   color: var(--accent);
 }
 
+.archive-all-btn {
+  margin-top: 0.4rem;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.5rem;
+  text-align: left;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s var(--ease), color 0.2s var(--ease);
+}
+
+.archive-all-btn:hover:not(:disabled) {
+  background: var(--accent-faint);
+  color: var(--accent);
+}
+
+.archive-all-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 .modal-overlay {
   display: none;
   position: fixed;

@@ -675,3 +675,56 @@ async def test_archive_nonexistent_task_returns_404(client):
 async def test_unarchive_nonexistent_task_returns_404(client):
     response = await client.post("/api/archive/KAN-99/unarchive")
     assert response.status_code == 404
+
+
+async def test_archive_all_done_archives_every_done_task(client):
+    kan_1 = (
+        await client.post("/api/tasks", json={"column": "To Do", "title": "Done one"})
+    ).json()["id"]
+    kan_2 = (
+        await client.post("/api/tasks", json={"column": "To Do", "title": "Done two"})
+    ).json()["id"]
+    kan_3 = (
+        await client.post("/api/tasks", json={"column": "To Do", "title": "Still open"})
+    ).json()["id"]
+    await client.put(f"/api/tasks/{kan_1}/move", json={"to_column": "Done"})
+    await client.put(f"/api/tasks/{kan_2}/move", json={"to_column": "Done"})
+
+    response = await client.post("/api/tasks/archive-done")
+
+    assert response.status_code == 200
+    assert response.json() == {"archived": 2}
+
+    board = (await client.get("/api/tasks")).json()
+    assert board.get("Done", []) == []
+    assert any(t["id"] == kan_3 for t in board["To Do"])
+
+    archive_ids = {item["id"] for item in (await client.get("/api/archive")).json()}
+    assert archive_ids == {kan_1, kan_2}
+
+
+async def test_archive_all_done_with_no_done_tasks_archives_nothing(client):
+    await client.post("/api/tasks", json={"column": "To Do", "title": "Not done"})
+
+    response = await client.post("/api/tasks/archive-done")
+
+    assert response.status_code == 200
+    assert response.json() == {"archived": 0}
+
+
+async def test_archive_all_done_skips_already_archived_and_trashed_tasks(client):
+    kan_1 = (
+        await client.post("/api/tasks", json={"column": "To Do", "title": "Already archived"})
+    ).json()["id"]
+    kan_2 = (
+        await client.post("/api/tasks", json={"column": "To Do", "title": "Trashed"})
+    ).json()["id"]
+    await client.put(f"/api/tasks/{kan_1}/move", json={"to_column": "Done"})
+    await client.put(f"/api/tasks/{kan_2}/move", json={"to_column": "Done"})
+    await client.post(f"/api/tasks/{kan_1}/archive")
+    await client.delete(f"/api/tasks/{kan_2}")
+
+    response = await client.post("/api/tasks/archive-done")
+
+    assert response.status_code == 200
+    assert response.json() == {"archived": 0}
