@@ -34,6 +34,23 @@ Open http://127.0.0.1:8000 — the backend serves both the API and the static fr
 python -m pytest
 ```
 
+## Seeding sample data
+
+`scripts/seed_sample_data.py` populates the board with a fixed set of ~16 varied sample tasks
+(all priorities, all columns, blocking relationships, subtasks, notes, due dates, and a few tasks
+with a deliberately backdated `updated_at`) — useful for demoing or manually testing the UI
+against a non-empty board. Start the dev server first, then run:
+
+```
+python -m scripts.seed_sample_data
+```
+
+It talks to the running API for everything except backdating `updated_at`, which has no API
+surface and goes through `backend/storage` directly. It also starts the first sprint if none is
+active yet. Not idempotent — re-running against a board that already has these task titles fails
+on the first duplicate-title request (`409`); point it at an empty `.kanban_data/kanban.db` (or
+delete that file, it's recreated on next run) to start fresh.
+
 ## Board columns
 
 Four fixed columns: **To Do**, **In Progress**, **In Review**, **Done**. Columns aren't a
