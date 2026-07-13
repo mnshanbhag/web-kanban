@@ -40,6 +40,7 @@ class Task(Base):
     priority = Column(String, nullable=False, default=DEFAULT_PRIORITY)
     blocked_by_id = Column(Integer, ForeignKey("tasks.id", ondelete="SET NULL"), nullable=True)
     deleted_at = Column(DateTime, nullable=True)
+    archived_at = Column(DateTime, nullable=True)
     due_date = Column(DateTime, nullable=True)
 
     blocked_by = relationship(
@@ -129,7 +130,7 @@ def _validate_blocker(session: Session, blocked_by: str, own_id: Optional[int]) 
 
 def _get_active_task(session: Session, task_id: str) -> Task:
     task = session.get(Task, _parse_id(task_id))
-    if task is None or task.deleted_at is not None:
+    if task is None or task.deleted_at is not None or task.archived_at is not None:
         raise FileNotFoundError(f"Task '{task_id}' not found")
     return task
 
@@ -141,11 +142,21 @@ def _get_trashed_task(session: Session, task_id: str) -> Task:
     return task
 
 
+def _get_archived_task(session: Session, task_id: str) -> Task:
+    task = session.get(Task, _parse_id(task_id))
+    if task is None or task.archived_at is None:
+        raise FileNotFoundError(f"Task '{task_id}' not found in archive")
+    return task
+
+
 def _assert_title_available(
     session: Session, column: str, title: str, exclude_id: Optional[int] = None
 ) -> None:
     query = session.query(Task).filter(
-        Task.column == column, Task.title == title, Task.deleted_at.is_(None)
+        Task.column == column,
+        Task.title == title,
+        Task.deleted_at.is_(None),
+        Task.archived_at.is_(None),
     )
     if exclude_id is not None:
         query = query.filter(Task.id != exclude_id)
@@ -179,7 +190,7 @@ def get_all_boards() -> dict[str, list[dict]]:
     with _session() as session:
         tasks = (
             session.query(Task)
-            .filter(Task.deleted_at.is_(None))
+            .filter(Task.deleted_at.is_(None), Task.archived_at.is_(None))
             .order_by(Task.column, Task.title)
             .all()
         )
@@ -446,3 +457,73 @@ def delete_subtask(task_id: str, subtask_id: int) -> None:
         subtask = _get_subtask(session, task_id, subtask_id)
         session.delete(subtask)
         session.commit()
+
+
+def archive_task(task_id: str) -> None:
+    """Archive a Done task: hides it from the board without touching the trash path.
+
+    Archived and trashed are independent, non-overlapping states — a task can't be
+    both. _get_active_task already excludes trashed *and* archived tasks, so this
+    naturally rejects re-archiving an already-archived task or archiving a trashed
+    one (both surface as 404, same as any other "not found" active task).
+    """
+    with _session() as session:
+        task = _get_active_task(session, task_id)
+        if task.column != DONE_COLUMN:
+            raise ValueError("Only tasks in the Done column can be archived")
+        task.archived_at = datetime.now(timezone.utc)
+        session.commit()
+
+
+def archive_all_done() -> int:
+    """Archive every active Done task in one shot. Returns the number archived."""
+    with _session() as session:
+        tasks = (
+            session.query(Task)
+            .filter(
+                Task.column == DONE_COLUMN,
+                Task.deleted_at.is_(None),
+                Task.archived_at.is_(None),
+            )
+            .all()
+        )
+        now = datetime.now(timezone.utc)
+        for task in tasks:
+            task.archived_at = now
+        session.commit()
+        return len(tasks)
+
+
+def unarchive_task(task_id: str) -> None:
+    """Unarchive a task, making it visible on the board again.
+
+    Archived tasks are always in Done, and Done tasks can never carry a
+    blocked_by_id (set_blocked_by refuses to block a Done task, and move_task
+    clears it on the way in) — so unlike restore_task there's no blocker
+    invariant to re-check here, only the title-uniqueness one.
+    """
+    with _session() as session:
+        task = _get_archived_task(session, task_id)
+        _assert_title_available(session, task.column, task.title, exclude_id=task.id)
+        task.archived_at = None
+        session.commit()
+
+
+def get_archive() -> list[dict]:
+    with _session() as session:
+        tasks = (
+            session.query(Task)
+            .filter(Task.archived_at.isnot(None))
+            .order_by(Task.archived_at.desc())
+            .all()
+        )
+        return [
+            {
+                "id": _display_id(t.id),
+                "title": t.title,
+                "description": t.description,
+                "priority": t.priority,
+                "archived_at": _utc_isoformat(t.archived_at),
+            }
+            for t in tasks
+        ]
