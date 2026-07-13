@@ -85,4 +85,5 @@ Auto-hide (not delete) Done tasks older than N days, with a way to view/unarchiv
 ### Manual card ordering within a column
 Let a card be dragged to a specific position within a column, not just between columns —
 persisted across reloads.
-- **Why shelved:** shelved on 2026-07-08 without an implementation.
+- **Why shelved:** doesn't add any value.
+- **Shelved:** 2026-07-08.
