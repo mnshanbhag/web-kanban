@@ -88,14 +88,7 @@ An `updated_at` column touched on every mutation, surfaced on cards via the exis
 - **Tension:** same tzinfo gotcha as above. Easy to miss a mutation path (e.g. the Done-cascade's
   dependent-clearing loop in `move_task`) — decide upfront whether that counts as "updating."
 
-### 4. Keyboard shortcuts / quick-add
-A shortcut to open "new task," `/` to focus search (pairs with the already-shipped search bar),
-arrow-key card navigation. Extends the existing `Escape`-key handler pattern in `app.js`.
-- **Why:** cheap ergonomics win for a tool used many times a day by one person.
-- **Scope:** small, frontend-only.
-- **Tension:** must not hijack keys while a modal input/textarea has focus.
-
-### 5. Scrum sprints
+### 4. Scrum sprints
 A lightweight, optional time-boxing layer over the existing continuous board: start a named
 sprint with a fixed duration (1/2/3/4 weeks, picked from today), and a banner above the board
 shows its name/date range/days-remaining with Start/End Sprint controls. No backlog view, no
@@ -121,22 +114,22 @@ sprints, after asking the user which Scrum concepts they actually wanted (2026-0
 - **Status:** idea only, explicitly not handed to `feature-implementer` yet — the user wants to
   sit with it and possibly refine scope before building.
 
-### 6. Past sprints view
+### 5. Past sprints view
 A way to see closed sprints after the fact — a `GET /api/sprints` list endpoint (most-recent-
 first) plus a small "past sprints" panel in the UI (name, date range, which tasks completed
 during it).
-- **Why:** the Scrum sprints idea (#5) as scoped closes a sprint by flipping its `status` to
+- **Why:** the Scrum sprints idea (#4) as scoped closes a sprint by flipping its `status` to
   `"closed"` and clearing `sprint_id` off any non-Done task in it, but never exposes closed
   sprints anywhere — the data sits inert in the `sprints` table with no way to look back at it.
-- **Scope:** small, and purely additive on top of #5's schema — no new columns, just a list
+- **Scope:** small, and purely additive on top of #4's schema — no new columns, just a list
   endpoint (mirrors `get_trash()`/`get_archive()`'s pattern) and a read-only view. Done tasks
   already retain their `sprint_id` after a sprint closes, so "which tasks completed in Sprint N"
   falls out of a simple query once this exists.
-- **Tension:** depends on #5 (Scrum sprints) shipping first — there's no `sprints` table without
-  it. Keep this a separate, later increment rather than folding it into #5's initial scope, per
+- **Tension:** depends on #4 (Scrum sprints) shipping first — there's no `sprints` table without
+  it. Keep this a separate, later increment rather than folding it into #4's initial scope, per
   the user's explicit call (2026-07-13) to keep the first pass minimal.
 
-### 7. JSON export / import (manual backup)
+### 6. JSON export / import (manual backup)
 A "download backup" button dumping all tasks (active + trashed) as JSON; matching import.
 - **Why:** the whole app is one local SQLite file with no sync or versioned backups.
 - **Scope:** small for export (wraps existing `get_all_boards`/`get_trash`); import is the harder
@@ -146,22 +139,22 @@ A "download backup" button dumping all tasks (active + trashed) as JSON; matchin
   guarantee has already retired. Consider shipping export first, treating import as a separate,
   carefully-scoped follow-up.
 
-### 8. Sprint timeline view (last / current / next)
+### 7. Sprint timeline view (last / current / next)
 On startup, show three sprint panels at once — last, current, and next — instead of just a
 current-sprint banner. Last and next are collapsed by default to save space; current stays
-expanded. Explicitly kept as its own later increment, not folded into #5's first pass (2026-07-13).
-- **Why:** #5 (Scrum sprints) only ever surfaces the current sprint; #6 (Past sprints view) exposes
+expanded. Explicitly kept as its own later increment, not folded into #4's first pass (2026-07-13).
+- **Why:** #4 (Scrum sprints) only ever surfaces the current sprint; #5 (Past sprints view) exposes
   history but only via a separate panel a user has to open. This idea instead puts the immediate
   before/after context of the current sprint on the board by default.
-- **Scope:** medium-to-large, and depends on both #5 and #6. It also adds a capability neither of
+- **Scope:** medium-to-large, and depends on both #4 and #5. It also adds a capability neither of
   those has: a **pre-planned "next" sprint** — sprints today only come into existence when
   started, so surfacing a real "next sprint" (name + dates, not just a placeholder) requires a new
   `"planned"` `Sprint` status creatable ahead of the current sprint ending, plus whatever
   start-time behavior reconciles a planned sprint with the existing auto-start/rollover-sweep
-  logic in #5.
-- **Tension:** don't build this until #5 ships (no `sprints` table yet) and ideally #6 too (the
-  "last sprint" panel is essentially a size-1 version of #6's list). The "planned" status is new
-  surface area on top of #5's `status` column (`"active"`/`"closed"` today) — needs its own design
+  logic in #4.
+- **Tension:** don't build this until #4 ships (no `sprints` table yet) and ideally #5 too (the
+  "last sprint" panel is essentially a size-1 version of #5's list). The "planned" status is new
+  surface area on top of #4's `status` column (`"active"`/`"closed"` today) — needs its own design
   pass on how a planned sprint transitions to active and what happens if the current sprint is
   ended early or extended relative to a planned sprint's start date.
 - **Status:** idea only, not scoped in detail yet, not handed to `feature-implementer`.
@@ -175,3 +168,9 @@ Let a card be dragged to a specific position within a column, not just between c
 persisted across reloads.
 - **Why shelved:** doesn't add any value.
 - **Shelved:** 2026-07-08.
+
+### Keyboard shortcuts / quick-add
+A shortcut to open "new task," `/` to focus search (pairs with the already-shipped search bar),
+arrow-key card navigation.
+- **Why shelved:** no tangible benefit.
+- **Shelved:** 2026-07-13.
