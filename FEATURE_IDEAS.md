@@ -146,6 +146,26 @@ A "download backup" button dumping all tasks (active + trashed) as JSON; matchin
   guarantee has already retired. Consider shipping export first, treating import as a separate,
   carefully-scoped follow-up.
 
+### 8. Sprint timeline view (last / current / next)
+On startup, show three sprint panels at once — last, current, and next — instead of just a
+current-sprint banner. Last and next are collapsed by default to save space; current stays
+expanded. Explicitly kept as its own later increment, not folded into #5's first pass (2026-07-13).
+- **Why:** #5 (Scrum sprints) only ever surfaces the current sprint; #6 (Past sprints view) exposes
+  history but only via a separate panel a user has to open. This idea instead puts the immediate
+  before/after context of the current sprint on the board by default.
+- **Scope:** medium-to-large, and depends on both #5 and #6. It also adds a capability neither of
+  those has: a **pre-planned "next" sprint** — sprints today only come into existence when
+  started, so surfacing a real "next sprint" (name + dates, not just a placeholder) requires a new
+  `"planned"` `Sprint` status creatable ahead of the current sprint ending, plus whatever
+  start-time behavior reconciles a planned sprint with the existing auto-start/rollover-sweep
+  logic in #5.
+- **Tension:** don't build this until #5 ships (no `sprints` table yet) and ideally #6 too (the
+  "last sprint" panel is essentially a size-1 version of #6's list). The "planned" status is new
+  surface area on top of #5's `status` column (`"active"`/`"closed"` today) — needs its own design
+  pass on how a planned sprint transitions to active and what happens if the current sprint is
+  ended early or extended relative to a planned sprint's start date.
+- **Status:** idea only, not scoped in detail yet, not handed to `feature-implementer`.
+
 ---
 
 ## ❌ Shelved
