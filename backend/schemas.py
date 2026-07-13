@@ -66,6 +66,7 @@ class TaskOut(BaseModel):
     due_date: Optional[str] = None
     subtask_total: int = 0
     subtask_done: int = 0
+    updated_at: Optional[str] = None
 
 
 class TrashedTaskOut(BaseModel):

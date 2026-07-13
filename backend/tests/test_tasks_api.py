@@ -46,6 +46,8 @@ async def test_post_persists_task_to_sqlite_and_get_reads_it_back(client, tmp_pa
 
     assert get_response.status_code == 200
     board = get_response.json()
+    assert len(board["To Do"]) == 1
+    assert board["To Do"][0]["updated_at"] is not None
     assert board["To Do"] == [
         {
             "id": task_id,
@@ -57,6 +59,7 @@ async def test_post_persists_task_to_sqlite_and_get_reads_it_back(client, tmp_pa
             "due_date": None,
             "subtask_total": 0,
             "subtask_done": 0,
+            "updated_at": board["To Do"][0]["updated_at"],
         }
     ]
 
@@ -1018,3 +1021,127 @@ async def test_permanently_deleting_task_cascades_to_its_notes(client):
     with storage._session() as session:
         assert session.get(storage.Task, storage._parse_id(task_id)) is None
         assert session.get(storage.TaskNote, note["id"]) is None
+
+
+async def _get_task(client, column, task_id):
+    board = (await client.get("/api/tasks")).json()
+    return next(t for t in board[column] if t["id"] == task_id)
+
+
+async def test_created_task_has_a_timezone_aware_updated_at(client):
+    task_id = (
+        await client.post("/api/tasks", json={"column": "To Do", "title": "Fresh task"})
+    ).json()["id"]
+
+    task = await _get_task(client, "To Do", task_id)
+    assert task["updated_at"] is not None
+
+    from datetime import datetime
+
+    parsed = datetime.fromisoformat(task["updated_at"])
+    assert parsed.tzinfo is not None
+
+
+async def test_reading_the_board_does_not_change_updated_at(client):
+    task_id = (
+        await client.post("/api/tasks", json={"column": "To Do", "title": "Untouched"})
+    ).json()["id"]
+
+    first = (await _get_task(client, "To Do", task_id))["updated_at"]
+    second = (await _get_task(client, "To Do", task_id))["updated_at"]
+
+    assert first == second
+
+
+async def test_updating_priority_bumps_updated_at(client):
+    import asyncio
+
+    task_id = (
+        await client.post("/api/tasks", json={"column": "To Do", "title": "Priority bump"})
+    ).json()["id"]
+    before = (await _get_task(client, "To Do", task_id))["updated_at"]
+
+    await asyncio.sleep(0.01)
+    response = await client.put(f"/api/tasks/{task_id}/priority", json={"priority": "High"})
+    assert response.status_code == 200
+
+    after = (await _get_task(client, "To Do", task_id))["updated_at"]
+    assert after != before
+    assert after > before
+
+
+async def test_setting_blocked_by_bumps_updated_at(client):
+    import asyncio
+
+    kan_1 = (await client.post("/api/tasks", json={"column": "To Do", "title": "Blocker"})).json()[
+        "id"
+    ]
+    kan_2 = (
+        await client.post("/api/tasks", json={"column": "To Do", "title": "Dependent"})
+    ).json()["id"]
+    before = (await _get_task(client, "To Do", kan_2))["updated_at"]
+
+    await asyncio.sleep(0.01)
+    response = await client.put(f"/api/tasks/{kan_2}/blocked-by", json={"blocked_by": kan_1})
+    assert response.status_code == 200
+
+    after = (await _get_task(client, "To Do", kan_2))["updated_at"]
+    assert after != before
+    assert after > before
+
+
+async def test_setting_due_date_bumps_updated_at(client):
+    import asyncio
+
+    task_id = (
+        await client.post("/api/tasks", json={"column": "To Do", "title": "Deadline"})
+    ).json()["id"]
+    before = (await _get_task(client, "To Do", task_id))["updated_at"]
+
+    await asyncio.sleep(0.01)
+    response = await client.put(f"/api/tasks/{task_id}/due-date", json={"due_date": "2026-08-01"})
+    assert response.status_code == 200
+
+    after = (await _get_task(client, "To Do", task_id))["updated_at"]
+    assert after != before
+    assert after > before
+
+
+async def test_moving_a_task_bumps_updated_at(client):
+    import asyncio
+
+    task_id = (
+        await client.post("/api/tasks", json={"column": "To Do", "title": "Movable"})
+    ).json()["id"]
+    before = (await _get_task(client, "To Do", task_id))["updated_at"]
+
+    await asyncio.sleep(0.01)
+    response = await client.put(f"/api/tasks/{task_id}/move", json={"to_column": "In Progress"})
+    assert response.status_code == 200
+
+    after = (await _get_task(client, "In Progress", task_id))["updated_at"]
+    assert after != before
+    assert after > before
+
+
+async def test_completing_a_blocker_bumps_dependents_updated_at_too(client):
+    """The Done-cascade clearing a dependent's blocked_by_id counts as an update
+    to that dependent, not just to the task being moved to Done."""
+    import asyncio
+
+    kan_1 = (await client.post("/api/tasks", json={"column": "To Do", "title": "Blocker"})).json()[
+        "id"
+    ]
+    kan_2 = (
+        await client.post("/api/tasks", json={"column": "To Do", "title": "Dependent"})
+    ).json()["id"]
+    await client.put(f"/api/tasks/{kan_2}/blocked-by", json={"blocked_by": kan_1})
+    before = (await _get_task(client, "To Do", kan_2))["updated_at"]
+
+    await asyncio.sleep(0.01)
+    move_response = await client.put(f"/api/tasks/{kan_1}/move", json={"to_column": "Done"})
+    assert move_response.status_code == 200
+
+    after = (await _get_task(client, "To Do", kan_2))["updated_at"]
+    assert after != before
+    assert after > before

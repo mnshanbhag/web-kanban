@@ -47,9 +47,10 @@ SQLAlchemy ORM in `backend/storage.py`. There's no migration tooling; the schema
 first run via `Base.metadata.create_all()`.
 
 The `tasks` table has: `id` (integer primary key), `title`, `description`, `column`, `priority`,
-`blocked_by_id` (a self-referential foreign key), `deleted_at`, `archived_at`, and `due_date`.
-A separate `task_subtasks` table (FK `ondelete="CASCADE"`) holds each task's subtask checklist
-items, and a `task_notes` table (same FK shape) holds each task's activity log entries.
+`blocked_by_id` (a self-referential foreign key), `deleted_at`, `archived_at`, `due_date`, and
+`updated_at`. A separate `task_subtasks` table (FK `ondelete="CASCADE"`) holds each task's
+subtask checklist items, and a `task_notes` table (same FK shape) holds each task's activity log
+entries.
 
 - **`id`** is exposed over the API as `"KAN-01"`, `"KAN-02"`, ... (`f"KAN-{id:02d}"`). It's never
   reused: the table uses SQLite's `AUTOINCREMENT` (`sqlite_autoincrement=True`), which guarantees
@@ -72,6 +73,10 @@ items, and a `task_notes` table (same FK shape) holds each task's activity log e
   had; the trash API exposes the task's own `column` value under that name instead.
 - **`archived_at`** is `NULL` unless the task has been manually archived (see "Archive" below).
   Independent of `deleted_at` — a task can be trashed or archived, never both at once.
+- **`updated_at`** is set on creation and touched on every content mutation (edits, priority,
+  blocking, due date, moving columns) — including on a *dependent* task when finishing another
+  task clears its `blocked_by`. Not touched by lifecycle-only operations (delete, restore,
+  archive, unarchive). Surfaced on cards as "Updated X ago".
 
 ### Recycle bin
 
@@ -101,6 +106,12 @@ A timestamped, append-only list of freeform notes per task, separate from the si
 detail modal, newest note first. Backed by a `task_notes` table (FK `ondelete="CASCADE"`); notes
 survive their parent task being trashed and restored, and are only removed if the task is
 permanently deleted. There's no edit or delete for an individual note — once added, a note stays.
+
+### Activity recency
+
+Every card shows an "Updated X ago" line, reusing the same relative-time formatting already used
+in the trash panel. Backed by the `updated_at` column described above — no separate endpoint,
+just an extra field returned on `TaskOut`.
 
 ### Blocking rules
 

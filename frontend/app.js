@@ -254,6 +254,13 @@ function createCardElement(column, task) {
     card.appendChild(tags);
   }
 
+  if (task.updated_at) {
+    const updated = document.createElement("p");
+    updated.className = "card-updated";
+    updated.textContent = `Updated ${formatRelativeTime(task.updated_at)}`;
+    card.appendChild(updated);
+  }
+
   if (column === DONE_COLUMN) {
     const archiveBtn = document.createElement("button");
     archiveBtn.className = "card-archive";
