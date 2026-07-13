@@ -87,3 +87,8 @@ class EmptyTrashResponse(BaseModel):
 
 class ArchiveAllResponse(BaseModel):
     archived: int
+
+
+class ExportOut(BaseModel):
+    tasks: dict[str, list[TaskOut]]
+    trash: list[TrashedTaskOut]

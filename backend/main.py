@@ -11,6 +11,7 @@ from backend.schemas import (
     BlockedByResponse,
     DueDateResponse,
     EmptyTrashResponse,
+    ExportOut,
     IdResponse,
     PriorityResponse,
     RestoreResponse,
@@ -179,6 +180,11 @@ def unarchive_task(task_id: str):
     except FileExistsError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return {"id": task_id}
+
+
+@app.get("/api/export", response_model=ExportOut)
+def export_data():
+    return {"tasks": storage.get_all_boards(), "trash": storage.get_trash()}
 
 
 app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
