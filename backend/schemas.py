@@ -75,3 +75,8 @@ class RestoreResponse(BaseModel):
 
 class EmptyTrashResponse(BaseModel):
     deleted: int
+
+
+class ExportOut(BaseModel):
+    tasks: dict[str, list[TaskOut]]
+    trash: list[TrashedTaskOut]

@@ -9,6 +9,7 @@ from backend.schemas import (
     BlockedByResponse,
     DueDateResponse,
     EmptyTrashResponse,
+    ExportOut,
     IdResponse,
     PriorityResponse,
     RestoreResponse,
@@ -144,6 +145,11 @@ def permanent_delete_task(task_id: str):
 def empty_trash():
     count = storage.empty_trash()
     return {"deleted": count}
+
+
+@app.get("/api/export", response_model=ExportOut)
+def export_data():
+    return {"tasks": storage.get_all_boards(), "trash": storage.get_trash()}
 
 
 app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")

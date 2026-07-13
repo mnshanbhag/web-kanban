@@ -559,3 +559,32 @@ async def test_engine_creation_is_thread_safe_under_concurrent_first_access(tmp_
         thread.join()
 
     assert errors == []
+
+
+async def test_export_includes_active_and_trashed_tasks(client):
+    kan_1 = (
+        await client.post("/api/tasks", json={"column": "To Do", "title": "Keep me"})
+    ).json()["id"]
+    kan_2 = (
+        await client.post("/api/tasks", json={"column": "In Progress", "title": "Trash me"})
+    ).json()["id"]
+    await client.delete(f"/api/tasks/{kan_2}")
+
+    response = await client.get("/api/export")
+
+    assert response.status_code == 200
+    export = response.json()
+
+    assert export["tasks"] == (await client.get("/api/tasks")).json()
+    assert export["trash"] == (await client.get("/api/trash")).json()
+
+    assert export["tasks"]["To Do"][0]["id"] == kan_1
+    assert export["trash"][0]["id"] == kan_2
+    assert export["trash"][0]["deleted_from"] == "In Progress"
+
+
+async def test_export_with_no_tasks_returns_empty_shapes(client):
+    response = await client.get("/api/export")
+
+    assert response.status_code == 200
+    assert response.json() == {"tasks": {}, "trash": []}
