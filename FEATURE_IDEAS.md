@@ -167,6 +167,42 @@ expanded. Explicitly kept as its own later increment, not folded into #4's first
 
 ---
 
+### 8. PostgreSQL support (for Vercel deployment)
+Make the storage layer able to run against Postgres instead of (or alongside) SQLite, so the app
+can be deployed to Vercel — Vercel's serverless functions have an ephemeral/read-only-ish
+filesystem, so the current `.kanban_data/kanban.db` file won't reliably persist writes across
+requests once deployed there.
+- **Why:** the whole point is unblocking a Vercel deploy of this project; SQLite-on-serverless is
+  the specific thing standing in the way.
+- **Scope:** medium — likely a `DATABASE_URL`-style env var read in `storage._session()`/engine
+  setup, defaulting to today's SQLite file when unset (keeps local dev/tests zero-config) and
+  switching to Postgres when set (as Vercel Postgres/Neon would provide). Needs a Postgres driver
+  added to `requirements.txt`.
+- **Tension:** several bits of `storage.py` are SQLite-specific and need dialect-aware handling,
+  not a blind swap:
+  - `Task.__table_args__ = {"sqlite_autoincrement": True}` — this flag is meaningless (and per
+    SQLAlchemy docs, silently ignored) on Postgres, which never reuses serial/identity values by
+    default anyway; need to confirm the "IDs never reused" invariant still holds without it.
+  - The `Engine "connect"` listener that issues `PRAGMA foreign_keys=ON` is SQLite-only syntax —
+    Postgres enforces FKs by default and doesn't understand that pragma, so this needs to become
+    conditional on dialect rather than running unconditionally.
+  - `storage._utc_isoformat()` exists specifically because SQLite drops tzinfo on `DateTime`
+    round-trips; Postgres's `TIMESTAMP WITH TIME ZONE` doesn't have that problem, so the helper
+    may need to become a no-op (or conditional) on Postgres rather than being removed outright —
+    removing it would break the SQLite path if dual support is kept.
+  - No schema-migration tool exists today (`create_all`-only, per the Scrum sprints idea's
+    tension, #4) — decide whether this is finally the moment to introduce Alembic, or whether
+    `create_all` is still good enough for a fresh Postgres database.
+  - Existing tests monkeypatch `storage.DATA_DIR` to point SQLite at a `tmp_path`
+    (`backend/tests/test_tasks_api.py`) — if dual support is kept, tests can keep doing exactly
+    this against SQLite; only a manual/CI smoke test would exercise the Postgres path.
+  - Moving *existing* local data into a new Postgres instance isn't really "migration" so much as
+    export/import — ties into the JSON export (shipped) and JSON import (#6, not yet built) ideas.
+- **Status:** idea only, not scoped down or handed to `feature-implementer` yet — open questions
+  above (dual support vs. Postgres-only, Alembic vs. not) need a decision first.
+
+---
+
 ## ❌ Shelved
 
 ### Manual card ordering within a column
