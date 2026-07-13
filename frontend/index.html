@@ -174,6 +174,15 @@
 
   <div class="toast" id="error-toast"></div>
 
+  <button class="archive-fab" id="archive-fab" title="Archive" aria-label="Archive">
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="2" y="3" width="20" height="5" rx="1"></rect>
+      <path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"></path>
+      <path d="M10 12h4"></path>
+    </svg>
+    <span class="trash-badge hidden" id="archive-badge">0</span>
+  </button>
+
   <button class="trash-fab" id="trash-fab" title="Recycle Bin" aria-label="Recycle Bin">
     <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <polyline points="3 6 5 6 21 6"></polyline>
@@ -195,6 +204,19 @@
       <p class="trash-empty-message hidden" id="trash-empty-message">Recycle bin is empty.</p>
       <div class="modal-actions">
         <button type="button" class="btn-secondary" id="trash-modal-close">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="archive-modal-overlay">
+    <div class="modal trash-modal">
+      <div class="trash-modal-header">
+        <h3>Archive</h3>
+      </div>
+      <div class="trash-list" id="archive-list"></div>
+      <p class="trash-empty-message hidden" id="archive-empty-message">Archive is empty.</p>
+      <div class="modal-actions">
+        <button type="button" class="btn-secondary" id="archive-modal-close">Close</button>
       </div>
     </div>
   </div>

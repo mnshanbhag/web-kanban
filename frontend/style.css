@@ -658,6 +658,31 @@ body {
   color: var(--danger);
 }
 
+.card[data-column="Done"] .card-title {
+  margin-right: 2.7rem;
+}
+
+.card-archive {
+  position: absolute;
+  top: 0.5rem;
+  right: 1.7rem;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0.15rem 0.35rem;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s var(--ease), color 0.15s var(--ease);
+}
+
+.card-archive:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
 .task-detail-modal {
   max-width: 420px;
 }
@@ -846,7 +871,8 @@ body {
   background: var(--danger-soft);
 }
 
-.trash-fab {
+.trash-fab,
+.archive-fab {
   position: fixed;
   bottom: 1.5rem;
   right: 1.5rem;
@@ -865,8 +891,18 @@ body {
   transition: color 0.2s var(--ease), transform 0.2s var(--ease), box-shadow 0.2s var(--ease);
 }
 
+.archive-fab {
+  right: 5.5rem;
+}
+
 .trash-fab:hover {
   color: var(--danger);
+  transform: translateY(-2px);
+  box-shadow: var(--fab-shadow-hover);
+}
+
+.archive-fab:hover {
+  color: var(--accent);
   transform: translateY(-2px);
   box-shadow: var(--fab-shadow-hover);
 }
@@ -986,6 +1022,15 @@ body {
 
 .trash-item-actions .permanent-delete-btn:hover {
   background: var(--danger-soft-strong);
+}
+
+.trash-item-actions .unarchive-btn {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.trash-item-actions .unarchive-btn:hover {
+  background: var(--accent-soft-strong);
 }
 
 .toast {

@@ -41,6 +41,13 @@ const trashEmptyMessage = document.getElementById("trash-empty-message");
 const emptyTrashBtn = document.getElementById("empty-trash-btn");
 const trashModalClose = document.getElementById("trash-modal-close");
 
+const archiveFab = document.getElementById("archive-fab");
+const archiveBadge = document.getElementById("archive-badge");
+const archiveModalOverlay = document.getElementById("archive-modal-overlay");
+const archiveList = document.getElementById("archive-list");
+const archiveEmptyMessage = document.getElementById("archive-empty-message");
+const archiveModalClose = document.getElementById("archive-modal-close");
+
 const confirmModalOverlay = document.getElementById("confirm-modal-overlay");
 const confirmMessage = document.getElementById("confirm-message");
 const confirmCancelBtn = document.getElementById("confirm-cancel");
@@ -223,6 +230,22 @@ function createCardElement(column, task) {
     card.appendChild(tags);
   }
 
+  if (column === DONE_COLUMN) {
+    const archiveBtn = document.createElement("button");
+    archiveBtn.className = "card-archive";
+    archiveBtn.draggable = false;
+    archiveBtn.title = "Archive task";
+    archiveBtn.setAttribute("aria-label", "Archive task");
+    archiveBtn.innerHTML =
+      '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"></rect><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"></path><path d="M10 12h4"></path></svg>';
+    archiveBtn.addEventListener("mousedown", (event) => event.stopPropagation());
+    archiveBtn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      archiveTask(task.id);
+    });
+    card.appendChild(archiveBtn);
+  }
+
   const deleteBtn = document.createElement("button");
   deleteBtn.className = "card-delete";
   deleteBtn.textContent = "×";
@@ -326,6 +349,18 @@ async function deleteTask(taskId) {
   await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}`, { method: "DELETE" });
   await loadBoard();
   await refreshTrashBadge();
+}
+
+async function archiveTask(taskId) {
+  const res = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/archive`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    await handleApiError(res);
+    return;
+  }
+  await loadBoard();
+  await refreshArchiveBadge();
 }
 
 function formatRelativeTime(isoString) {
@@ -441,6 +476,77 @@ async function emptyTrash() {
   await renderTrash();
 }
 
+async function fetchArchive() {
+  const res = await fetch(`${API_BASE}/archive`);
+  return res.json();
+}
+
+async function refreshArchiveBadge() {
+  const archived = await fetchArchive();
+  archiveBadge.textContent = archived.length;
+  archiveBadge.classList.toggle("hidden", archived.length === 0);
+}
+
+function createArchiveItemElement(item) {
+  const el = document.createElement("div");
+  el.className = "trash-item";
+
+  const header = document.createElement("div");
+  header.className = "trash-item-header";
+
+  const title = document.createElement("span");
+  title.className = "trash-item-title";
+  title.textContent = item.title;
+  header.appendChild(title);
+
+  const idTag = document.createElement("span");
+  idTag.className = "trash-item-id";
+  idTag.textContent = item.id;
+  header.appendChild(idTag);
+
+  el.appendChild(header);
+
+  const meta = document.createElement("p");
+  meta.className = "trash-item-meta";
+  meta.textContent = `Archived ${formatRelativeTime(item.archived_at)}`;
+  el.appendChild(meta);
+
+  const actions = document.createElement("div");
+  actions.className = "trash-item-actions";
+
+  const unarchiveBtn = document.createElement("button");
+  unarchiveBtn.className = "unarchive-btn";
+  unarchiveBtn.textContent = "Unarchive";
+  unarchiveBtn.addEventListener("click", () => unarchiveTask(item.id));
+  actions.appendChild(unarchiveBtn);
+
+  el.appendChild(actions);
+  return el;
+}
+
+async function renderArchive() {
+  const archived = await fetchArchive();
+  archiveList.replaceChildren();
+  for (const item of archived) {
+    archiveList.appendChild(createArchiveItemElement(item));
+  }
+  archiveEmptyMessage.classList.toggle("hidden", archived.length > 0);
+  archiveBadge.textContent = archived.length;
+  archiveBadge.classList.toggle("hidden", archived.length === 0);
+}
+
+async function unarchiveTask(taskId) {
+  const res = await fetch(`${API_BASE}/archive/${encodeURIComponent(taskId)}/unarchive`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    await handleApiError(res);
+    return;
+  }
+  await renderArchive();
+  await loadBoard();
+}
+
 function applyFilters() {
   const query = filterSearchInput.value.trim().toLowerCase();
   const priority = filterPrioritySelect.value;
@@ -482,6 +588,15 @@ function openTrashModal() {
 
 function closeTrashModal() {
   trashModalOverlay.classList.remove("open");
+}
+
+function openArchiveModal() {
+  archiveModalOverlay.classList.add("open");
+  renderArchive();
+}
+
+function closeArchiveModal() {
+  archiveModalOverlay.classList.remove("open");
 }
 
 function confirmAction(message, onConfirm) {
@@ -595,6 +710,13 @@ emptyTrashBtn.addEventListener("click", () => {
   confirmAction("Permanently delete every task in the recycle bin? This can't be undone.", emptyTrash);
 });
 
+archiveFab.addEventListener("click", openArchiveModal);
+archiveModalClose.addEventListener("click", closeArchiveModal);
+
+archiveModalOverlay.addEventListener("click", (event) => {
+  if (event.target === archiveModalOverlay) closeArchiveModal();
+});
+
 confirmCancelBtn.addEventListener("click", closeConfirmModal);
 
 confirmConfirmBtn.addEventListener("click", async () => {
@@ -612,6 +734,7 @@ document.addEventListener("keydown", (event) => {
   if (confirmModalOverlay.classList.contains("open")) closeConfirmModal();
   else if (taskDetailModalOverlay.classList.contains("open")) closeTaskDetail();
   else if (trashModalOverlay.classList.contains("open")) closeTrashModal();
+  else if (archiveModalOverlay.classList.contains("open")) closeArchiveModal();
   else if (modalOverlay.classList.contains("open")) closeModal();
 });
 
@@ -670,3 +793,4 @@ document.querySelectorAll(".task-list").forEach((list) => {
 
 loadBoard();
 refreshTrashBadge();
+refreshArchiveBadge();

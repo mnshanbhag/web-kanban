@@ -6,6 +6,7 @@ from fastapi.staticfiles import StaticFiles
 
 from backend import storage
 from backend.schemas import (
+    ArchivedTaskOut,
     BlockedByResponse,
     DueDateResponse,
     EmptyTrashResponse,
@@ -116,6 +117,17 @@ def delete_task(task_id: str):
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+@app.post("/api/tasks/{task_id}/archive", response_model=IdResponse)
+def archive_task(task_id: str):
+    try:
+        storage.archive_task(task_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"id": task_id}
+
+
 @app.get("/api/trash", response_model=list[TrashedTaskOut])
 def list_trash():
     return storage.get_trash()
@@ -144,6 +156,22 @@ def permanent_delete_task(task_id: str):
 def empty_trash():
     count = storage.empty_trash()
     return {"deleted": count}
+
+
+@app.get("/api/archive", response_model=list[ArchivedTaskOut])
+def list_archive():
+    return storage.get_archive()
+
+
+@app.post("/api/archive/{task_id}/unarchive", response_model=IdResponse)
+def unarchive_task(task_id: str):
+    try:
+        storage.unarchive_task(task_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except FileExistsError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"id": task_id}
 
 
 app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")

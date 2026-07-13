@@ -559,3 +559,119 @@ async def test_engine_creation_is_thread_safe_under_concurrent_first_access(tmp_
         thread.join()
 
     assert errors == []
+
+
+async def test_archiving_a_done_task_removes_it_from_the_board(client):
+    kan_1 = (
+        await client.post("/api/tasks", json={"column": "To Do", "title": "Finish me"})
+    ).json()["id"]
+    await client.put(f"/api/tasks/{kan_1}/move", json={"to_column": "Done"})
+
+    response = await client.post(f"/api/tasks/{kan_1}/archive")
+    assert response.status_code == 200
+    assert response.json() == {"id": kan_1}
+
+    with storage._session() as session:
+        row = session.get(storage.Task, 1)
+        assert row is not None
+        assert row.archived_at is not None
+        assert row.deleted_at is None
+        assert row.column == "Done"
+
+    board = (await client.get("/api/tasks")).json()
+    assert board.get("Done", []) == []
+
+
+async def test_archiving_a_non_done_task_is_rejected(client):
+    kan_1 = (
+        await client.post("/api/tasks", json={"column": "To Do", "title": "Not finished"})
+    ).json()["id"]
+
+    response = await client.post(f"/api/tasks/{kan_1}/archive")
+
+    assert response.status_code == 400
+    board = (await client.get("/api/tasks")).json()
+    assert any(t["id"] == kan_1 for t in board["To Do"])
+
+
+async def test_archiving_a_trashed_task_is_rejected(client):
+    kan_1 = (
+        await client.post("/api/tasks", json={"column": "To Do", "title": "Trashed"})
+    ).json()["id"]
+    await client.put(f"/api/tasks/{kan_1}/move", json={"to_column": "Done"})
+    await client.delete(f"/api/tasks/{kan_1}")
+
+    response = await client.post(f"/api/tasks/{kan_1}/archive")
+
+    assert response.status_code == 404
+
+
+async def test_deleting_an_archived_task_is_rejected(client):
+    kan_1 = (
+        await client.post("/api/tasks", json={"column": "To Do", "title": "Archived"})
+    ).json()["id"]
+    await client.put(f"/api/tasks/{kan_1}/move", json={"to_column": "Done"})
+    await client.post(f"/api/tasks/{kan_1}/archive")
+
+    response = await client.delete(f"/api/tasks/{kan_1}")
+
+    assert response.status_code == 404
+    with storage._session() as session:
+        row = session.get(storage.Task, 1)
+        assert row is not None
+        assert row.deleted_at is None
+        assert row.archived_at is not None
+
+
+async def test_get_archive_list_returns_archived_task_fields(client):
+    kan_1 = (
+        await client.post(
+            "/api/tasks",
+            json={"column": "To Do", "title": "Archive listing", "description": "details"},
+        )
+    ).json()["id"]
+    await client.put(f"/api/tasks/{kan_1}/move", json={"to_column": "Done"})
+    await client.post(f"/api/tasks/{kan_1}/archive")
+
+    archive = (await client.get("/api/archive")).json()
+
+    assert archive == [
+        {
+            "id": kan_1,
+            "title": "Archive listing",
+            "description": "details",
+            "priority": "Medium",
+            "archived_at": archive[0]["archived_at"],
+        }
+    ]
+
+    from datetime import datetime
+
+    parsed = datetime.fromisoformat(archive[0]["archived_at"])
+    assert parsed.tzinfo is not None
+
+
+async def test_unarchiving_restores_task_to_the_board_in_done(client):
+    kan_1 = (
+        await client.post("/api/tasks", json={"column": "To Do", "title": "Round trip"})
+    ).json()["id"]
+    await client.put(f"/api/tasks/{kan_1}/move", json={"to_column": "Done"})
+    await client.post(f"/api/tasks/{kan_1}/archive")
+
+    response = await client.post(f"/api/archive/{kan_1}/unarchive")
+    assert response.status_code == 200
+    assert response.json() == {"id": kan_1}
+
+    board = (await client.get("/api/tasks")).json()
+    assert board["Done"][0]["id"] == kan_1
+    assert (await client.get("/api/archive")).json() == []
+
+
+async def test_archive_nonexistent_task_returns_404(client):
+    response = await client.post("/api/tasks/KAN-99/archive")
+    assert response.status_code == 404
+
+
+async def test_unarchive_nonexistent_task_returns_404(client):
+    response = await client.post("/api/archive/KAN-99/unarchive")
+    assert response.status_code == 404
