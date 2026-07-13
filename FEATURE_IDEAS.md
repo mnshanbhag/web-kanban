@@ -41,6 +41,18 @@ A small ordered checklist of items within a task (e.g. "Write tests", "Update do
   don't wire it into the Done-column invariants or blocking logic, to avoid new edge cases.
 - Handed to `feature-implementer` (2026-07-13).
 
+### JSON export (manual backup)
+A "download backup" button dumping all tasks (active + trashed) as JSON — the export half of the
+originally-proposed export/import pair.
+- **Why:** the whole app is one local SQLite file with no sync or versioned backups.
+- **Scope:** small — wraps existing `get_all_boards`/`get_trash` behind one new `GET` endpoint,
+  no new table.
+- **Tension:** import (minting new IDs, remapping `blocked_by` references rather than reusing
+  exported IDs) is deliberately **not** in scope for this pass — shipping export first per the
+  original entry's own note, treating import as a separate, later increment.
+- Handed to `feature-implementer` (2026-07-13), as a live test that it can use the new
+  `new-endpoint` skill.
+
 ### Archive Done tasks separately from trash
 A manual "Archive" action on Done cards (alongside the existing delete button), hiding the task
 from the board without touching the trash/soft-delete path. An archive panel — mirroring the
@@ -129,15 +141,14 @@ during it).
   it. Keep this a separate, later increment rather than folding it into #4's initial scope, per
   the user's explicit call (2026-07-13) to keep the first pass minimal.
 
-### 6. JSON export / import (manual backup)
-A "download backup" button dumping all tasks (active + trashed) as JSON; matching import.
-- **Why:** the whole app is one local SQLite file with no sync or versioned backups.
-- **Scope:** small for export (wraps existing `get_all_boards`/`get_trash`); import is the harder
-  half.
-- **Tension:** import must mint *new* IDs and remap `blocked_by` references rather than reusing
-  exported IDs — reusing them risks colliding with or resurrecting IDs the `AUTOINCREMENT`
-  guarantee has already retired. Consider shipping export first, treating import as a separate,
-  carefully-scoped follow-up.
+### 6. JSON import (manual backup, remainder)
+Import side of the export/import pair — the export half was split off and handed to
+`feature-implementer` (see In Progress) as a live test of the `new-endpoint` skill.
+- **Why:** export alone only covers backup, not restore.
+- **Scope:** the harder half — must mint *new* IDs and remap `blocked_by` references rather than
+  reusing exported IDs, since reusing them risks colliding with or resurrecting IDs the
+  `AUTOINCREMENT` guarantee has already retired.
+- **Tension:** don't start this until export has shipped and been used at least once.
 
 ### 7. Sprint timeline view (last / current / next)
 On startup, show three sprint panels at once — last, current, and next — instead of just a
