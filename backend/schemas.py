@@ -49,6 +49,14 @@ class TrashedTaskOut(BaseModel):
     deleted_at: str
 
 
+class ArchivedTaskOut(BaseModel):
+    id: str
+    title: str
+    description: str
+    priority: str
+    archived_at: str
+
+
 class IdResponse(BaseModel):
     id: str
 
@@ -75,6 +83,10 @@ class RestoreResponse(BaseModel):
 
 class EmptyTrashResponse(BaseModel):
     deleted: int
+
+
+class ArchiveAllResponse(BaseModel):
+    archived: int
 
 
 class ExportOut(BaseModel):
