@@ -13,6 +13,8 @@ from backend.schemas import (
     EmptyTrashResponse,
     ExportOut,
     IdResponse,
+    NoteCreate,
+    NoteOut,
     PriorityResponse,
     RestoreResponse,
     SubtaskCreate,
@@ -156,6 +158,24 @@ def delete_subtask(task_id: str, subtask_id: int):
         storage.delete_subtask(task_id, subtask_id)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/api/tasks/{task_id}/notes", response_model=list[NoteOut])
+def list_notes(task_id: str):
+    try:
+        return storage.get_notes(task_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/api/tasks/{task_id}/notes", status_code=201, response_model=NoteOut)
+def create_note(task_id: str, body: NoteCreate):
+    try:
+        return storage.add_note(task_id, body.body)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post("/api/tasks/{task_id}/archive", response_model=IdResponse)

@@ -929,3 +929,92 @@ async def test_export_with_no_tasks_returns_empty_shapes(client):
 
     assert response.status_code == 200
     assert response.json() == {"tasks": {}, "trash": []}
+
+
+async def test_add_note_and_list_returns_it(client):
+    task_id = (
+        await client.post("/api/tasks", json={"column": "To Do", "title": "Ship feature"})
+    ).json()["id"]
+
+    response = await client.post(f"/api/tasks/{task_id}/notes", json={"body": "Kicked off work"})
+    assert response.status_code == 201
+    note = response.json()
+    assert note["body"] == "Kicked off work"
+    assert "id" in note
+    assert "created_at" in note
+
+    list_response = await client.get(f"/api/tasks/{task_id}/notes")
+    assert list_response.status_code == 200
+    assert list_response.json() == [note]
+
+
+async def test_notes_are_ordered_newest_first(client):
+    task_id = (
+        await client.post("/api/tasks", json={"column": "To Do", "title": "Ship feature"})
+    ).json()["id"]
+
+    await client.post(f"/api/tasks/{task_id}/notes", json={"body": "First note"})
+    await client.post(f"/api/tasks/{task_id}/notes", json={"body": "Second note"})
+
+    notes = (await client.get(f"/api/tasks/{task_id}/notes")).json()
+    assert [n["body"] for n in notes] == ["Second note", "First note"]
+
+
+async def test_add_note_with_empty_body_is_rejected(client):
+    task_id = (
+        await client.post("/api/tasks", json={"column": "To Do", "title": "Ship feature"})
+    ).json()["id"]
+
+    response = await client.post(f"/api/tasks/{task_id}/notes", json={"body": "   "})
+    assert response.status_code == 400
+
+
+async def test_notes_endpoints_404_for_nonexistent_task(client):
+    response = await client.post("/api/tasks/KAN-99/notes", json={"body": "X"})
+    assert response.status_code == 404
+
+    response = await client.get("/api/tasks/KAN-99/notes")
+    assert response.status_code == 404
+
+
+async def test_note_created_at_is_timezone_aware(client):
+    task_id = (
+        await client.post("/api/tasks", json={"column": "To Do", "title": "Ship feature"})
+    ).json()["id"]
+    await client.post(f"/api/tasks/{task_id}/notes", json={"body": "Timezone check"})
+
+    notes = (await client.get(f"/api/tasks/{task_id}/notes")).json()
+
+    from datetime import datetime
+
+    parsed = datetime.fromisoformat(notes[0]["created_at"])
+    assert parsed.tzinfo is not None
+
+
+async def test_note_survives_delete_and_restore_of_its_task(client):
+    task_id = (
+        await client.post("/api/tasks", json={"column": "To Do", "title": "Ship feature"})
+    ).json()["id"]
+    await client.post(f"/api/tasks/{task_id}/notes", json={"body": "Important context"})
+
+    await client.delete(f"/api/tasks/{task_id}")
+    await client.post(f"/api/trash/{task_id}/restore")
+
+    notes = (await client.get(f"/api/tasks/{task_id}/notes")).json()
+    assert [n["body"] for n in notes] == ["Important context"]
+
+
+async def test_permanently_deleting_task_cascades_to_its_notes(client):
+    task_id = (
+        await client.post("/api/tasks", json={"column": "To Do", "title": "Ship feature"})
+    ).json()["id"]
+    note = (
+        await client.post(f"/api/tasks/{task_id}/notes", json={"body": "Note to be gone"})
+    ).json()
+
+    await client.delete(f"/api/tasks/{task_id}")
+    await client.delete(f"/api/trash/{task_id}")
+
+    with storage._session() as session:
+        assert session.get(storage.Task, storage._parse_id(task_id)) is None
+        assert session.get(storage.TaskNote, note["id"]) is None
