@@ -5,6 +5,8 @@ const DONE_COLUMN = "Done";
 const DEFAULT_PRIORITY = "Medium";
 const PRIORITIES = ["Low", "Medium", "High", "Urgent"];
 
+const WIP_LIMITS_STORAGE_KEY = "canban-wip-limits";
+
 const modalOverlay = document.getElementById("modal-overlay");
 const taskForm = document.getElementById("task-form");
 const titleInput = document.getElementById("task-title");
@@ -77,8 +79,67 @@ function renderBoard(board) {
       list.appendChild(createCardElement(column, task));
     }
     countEl.textContent = tasks.length;
+    syncWipLimitInput(column);
+    updateWipLimitIndicator(column, tasks.length);
   }
   applyFilters();
+}
+
+function loadWipLimits() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(WIP_LIMITS_STORAGE_KEY));
+    return stored && typeof stored === "object" ? stored : {};
+  } catch {
+    return {};
+  }
+}
+
+function getWipLimit(column) {
+  const limits = loadWipLimits();
+  const limit = limits[column];
+  return typeof limit === "number" && limit > 0 ? limit : null;
+}
+
+function setWipLimit(column, limit) {
+  const limits = loadWipLimits();
+  if (limit === null) {
+    delete limits[column];
+  } else {
+    limits[column] = limit;
+  }
+  localStorage.setItem(WIP_LIMITS_STORAGE_KEY, JSON.stringify(limits));
+}
+
+function syncWipLimitInput(column) {
+  const input = document.getElementById(`wip-limit-${column}`);
+  if (!input || document.activeElement === input) return;
+  const limit = getWipLimit(column);
+  input.value = limit === null ? "" : String(limit);
+}
+
+function updateWipLimitIndicator(column, count) {
+  const countEl = document.getElementById(`count-${column}`);
+  const input = document.getElementById(`wip-limit-${column}`);
+  const limit = getWipLimit(column);
+  const overLimit = limit !== null && count > limit;
+  countEl.classList.toggle("over-limit", overLimit);
+  countEl.title = overLimit ? `${count} of ${limit} WIP limit exceeded` : "";
+  if (input) input.classList.toggle("over-limit", overLimit);
+}
+
+function commitWipLimitInput(input) {
+  const column = input.dataset.column;
+  const raw = input.value.trim();
+  let limit = null;
+  if (raw !== "") {
+    const parsed = parseInt(raw, 10);
+    limit = Number.isNaN(parsed) || parsed <= 0 ? null : parsed;
+  }
+  setWipLimit(column, limit);
+  input.value = limit === null ? "" : String(limit);
+  const countEl = document.getElementById(`count-${column}`);
+  const count = parseInt(countEl.textContent, 10) || 0;
+  updateWipLimitIndicator(column, count);
 }
 
 function createCardElement(column, task) {
@@ -486,6 +547,21 @@ function closeTaskDetail() {
 
 document.querySelectorAll(".add-task-btn").forEach((btn) => {
   btn.addEventListener("click", () => openModal(btn.dataset.column));
+});
+
+document.querySelectorAll(".wip-limit-input").forEach((input) => {
+  input.addEventListener("change", () => commitWipLimitInput(input));
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      input.blur();
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      const limit = getWipLimit(input.dataset.column);
+      input.value = limit === null ? "" : String(limit);
+      input.blur();
+    }
+  });
 });
 
 document.getElementById("modal-cancel").addEventListener("click", closeModal);
