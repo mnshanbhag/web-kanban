@@ -32,6 +32,10 @@ const detailSubtaskList = document.getElementById("detail-subtask-list");
 const detailSubtaskInput = document.getElementById("detail-subtask-input");
 const detailSubtaskAddBtn = document.getElementById("detail-subtask-add-btn");
 const detailSubtaskProgress = document.getElementById("detail-subtask-progress");
+const detailNotesList = document.getElementById("detail-notes-list");
+const detailNotesEmptyMessage = document.getElementById("detail-notes-empty-message");
+const detailNoteInput = document.getElementById("detail-note-input");
+const detailNoteAddBtn = document.getElementById("detail-note-add-btn");
 
 const errorToast = document.getElementById("error-toast");
 
@@ -487,6 +491,52 @@ async function renderDetailSubtasks(taskId) {
   detailSubtaskProgress.textContent = subtasks.length ? `${done} / ${subtasks.length}` : "";
 }
 
+async function fetchNotes(taskId) {
+  const res = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/notes`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+async function addNote(taskId, body) {
+  const res = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/notes`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ body }),
+  });
+  if (!res.ok) {
+    await handleApiError(res);
+    return false;
+  }
+  await renderDetailNotes(taskId);
+  return true;
+}
+
+function createNoteItemElement(note) {
+  const item = document.createElement("div");
+  item.className = "note-item";
+
+  const body = document.createElement("p");
+  body.className = "note-item-body";
+  body.textContent = note.body;
+  item.appendChild(body);
+
+  const meta = document.createElement("span");
+  meta.className = "note-item-meta";
+  meta.textContent = formatRelativeTime(note.created_at);
+  item.appendChild(meta);
+
+  return item;
+}
+
+async function renderDetailNotes(taskId) {
+  const notes = await fetchNotes(taskId);
+  detailNotesList.replaceChildren();
+  for (const note of notes) {
+    detailNotesList.appendChild(createNoteItemElement(note));
+  }
+  detailNotesEmptyMessage.classList.toggle("hidden", notes.length > 0);
+}
+
 async function archiveTask(taskId) {
   const res = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/archive`, {
     method: "POST",
@@ -914,6 +964,9 @@ function openTaskDetail(column, task) {
   detailSubtaskInput.value = "";
   renderDetailSubtasks(task.id);
 
+  detailNoteInput.value = "";
+  renderDetailNotes(task.id);
+
   taskDetailModalOverlay.classList.add("open");
 }
 
@@ -1055,6 +1108,16 @@ detailSubtaskInput.addEventListener("keydown", (event) => {
     submitDetailSubtask();
   }
 });
+
+async function submitDetailNote() {
+  if (!currentDetailTask) return;
+  const body = detailNoteInput.value.trim();
+  if (!body) return;
+  const ok = await addNote(currentDetailTask.id, body);
+  if (ok) detailNoteInput.value = "";
+}
+
+detailNoteAddBtn.addEventListener("click", submitDetailNote);
 
 taskDetailForm.addEventListener("submit", async (event) => {
   event.preventDefault();

@@ -187,6 +187,17 @@
           <button type="button" class="btn-secondary" id="detail-subtask-add-btn">Add</button>
         </div>
       </div>
+      <div class="notes-section">
+        <div class="notes-section-header">
+          <span>Activity Log</span>
+        </div>
+        <div class="notes-list" id="detail-notes-list"></div>
+        <p class="notes-empty-message hidden" id="detail-notes-empty-message">No notes yet.</p>
+        <div class="notes-add-row">
+          <textarea id="detail-note-input" placeholder="Add a note…" maxlength="2000" rows="2"></textarea>
+          <button type="button" class="btn-secondary" id="detail-note-add-btn">Add note</button>
+        </div>
+      </div>
       <form id="task-detail-form">
         <div id="detail-blocked-by-field">
           <label for="detail-blocked-by">Blocked by (task ID)</label>
