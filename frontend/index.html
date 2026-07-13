@@ -204,7 +204,10 @@
 
   <div class="modal-overlay" id="sprint-modal-overlay">
     <div class="modal">
-      <h3>Start Sprint</h3>
+      <h3 id="sprint-modal-title">Start Sprint</h3>
+      <p class="sprint-modal-hint hidden" id="sprint-modal-hint">
+        Ending the current sprint moves its incomplete tasks straight into this one.
+      </p>
       <form id="sprint-form">
         <label for="sprint-name">Name</label>
         <input type="text" id="sprint-name" required maxlength="120" placeholder="e.g. Sprint 12" />
@@ -219,7 +222,7 @@
 
         <div class="modal-actions">
           <button type="button" class="btn-secondary" id="sprint-modal-cancel">Cancel</button>
-          <button type="submit" class="btn-primary">Start Sprint</button>
+          <button type="submit" class="btn-primary" id="sprint-modal-submit">Start Sprint</button>
         </div>
       </form>
     </div>

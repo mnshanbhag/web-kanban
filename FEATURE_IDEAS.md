@@ -40,11 +40,22 @@ sprints. New `Sprint` table (`sprints`: name, start_date, end_date, status, clos
 nullable `Task.sprint_id` FK (`ondelete="SET NULL"`, same shape as the existing `blocked_by_id`
 self-FK); `start_sprint`/`end_sprint`/`get_active_sprint` storage functions;
 `POST /api/sprints/start`, `POST /api/sprints/end`, `GET /api/sprints/active`; a banner + small
-"Start Sprint" modal in the frontend (no per-card badge — keeps the existing card-density
-decision intact). Tasks auto-join the active sprint on creation; ending a sprint clears the
-sprint tag from any non-Done task in it, and starting the next sprint sweeps up every
-currently-untagged, non-Done task (the "incomplete work rolls forward" mechanism). Done tasks
-keep their `sprint_id` permanently as a historical record. Shipped on `feature_scrum_sprints`
+modal in the frontend (no per-card badge — keeps the existing card-density decision intact).
+Tasks auto-join the active sprint on creation.
+
+**Revised during live testing (2026-07-13):** the first pass had "End Sprint" clear the sprint
+tag off every non-Done task (back to untagged), relying on the *next* sprint's `start_sprint` to
+sweep untagged tasks back up — which left the board with a "no active sprint, some tasks
+untagged" gap any time you ended a sprint without immediately starting another. Ending a sprint
+now always transitions directly into the next one: the End Sprint button opens a modal (name +
+duration, prefilled to 2 weeks, editable) and `end_sprint(next_name, next_duration_weeks)`
+atomically closes the current sprint *and* creates+activates the new one, moving every non-Done
+task from the closed sprint straight into it (no untagged gap in between). It still also sweeps
+up any currently-untagged non-Done task (the only way that can happen now is a task created
+before the very first sprint ever started), reusing the same sweep logic `start_sprint` uses for
+that initial bootstrap case — `start_sprint` itself is unchanged and still the only path to
+create the very first sprint. Done tasks still keep their `sprint_id` pointing at the
+now-closed sprint permanently, as a historical record. Shipped on `feature_scrum_sprints`
 (2026-07-13).
 
 ---
@@ -116,8 +127,8 @@ A way to see closed sprints after the fact — a `GET /api/sprints` list endpoin
 first) plus a small "past sprints" panel in the UI (name, date range, which tasks completed
 during it).
 - **Why:** the Scrum sprints feature (shipped) closes a sprint by flipping its `status` to
-  `"closed"` and clearing `sprint_id` off any non-Done task in it, but never exposes closed
-  sprints anywhere — the data sits inert in the `sprints` table with no way to look back at it.
+  `"closed"` (rolling its incomplete tasks into the next sprint) but never exposes closed sprints
+  anywhere — the data sits inert in the `sprints` table with no way to look back at it.
 - **Scope:** small, and purely additive on top of Scrum sprints' schema — no new columns, just a
   list endpoint (mirrors `get_trash()`/`get_archive()`'s pattern) and a read-only view. Done
   tasks already retain their `sprint_id` after a sprint closes, so "which tasks completed in

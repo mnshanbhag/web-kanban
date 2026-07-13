@@ -73,10 +73,14 @@ const sprintBannerDays = document.getElementById("sprint-banner-days");
 const startSprintBtn = document.getElementById("start-sprint-btn");
 const endSprintBtn = document.getElementById("end-sprint-btn");
 const sprintModalOverlay = document.getElementById("sprint-modal-overlay");
+const sprintModalTitle = document.getElementById("sprint-modal-title");
+const sprintModalHint = document.getElementById("sprint-modal-hint");
+const sprintModalSubmitBtn = document.getElementById("sprint-modal-submit");
 const sprintForm = document.getElementById("sprint-form");
 const sprintNameInput = document.getElementById("sprint-name");
 const sprintDurationSelect = document.getElementById("sprint-duration");
 const sprintModalCancelBtn = document.getElementById("sprint-modal-cancel");
+let sprintModalMode = "start";
 
 let toastTimer = null;
 let pendingConfirmAction = null;
@@ -764,17 +768,27 @@ async function startSprint(name, durationWeeks) {
   return true;
 }
 
-async function endSprint() {
-  const res = await fetch(`${API_BASE}/sprints/end`, { method: "POST" });
+async function endSprint(nextName, nextDurationWeeks) {
+  const res = await fetch(`${API_BASE}/sprints/end`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: nextName, duration_weeks: nextDurationWeeks }),
+  });
   if (!res.ok) {
     await handleApiError(res);
-    return;
+    return false;
   }
   await refreshSprintBanner();
   await loadBoard();
+  return true;
 }
 
-function openSprintModal() {
+function openSprintModal(mode) {
+  sprintModalMode = mode;
+  const ending = mode === "end";
+  sprintModalTitle.textContent = ending ? "End Sprint & Start Next" : "Start Sprint";
+  sprintModalSubmitBtn.textContent = ending ? "End & Start Next" : "Start Sprint";
+  sprintModalHint.classList.toggle("hidden", !ending);
   sprintNameInput.value = "";
   sprintDurationSelect.value = "2";
   sprintModalOverlay.classList.add("open");
@@ -974,7 +988,8 @@ confirmModalOverlay.addEventListener("click", (event) => {
   if (event.target === confirmModalOverlay) closeConfirmModal();
 });
 
-startSprintBtn.addEventListener("click", openSprintModal);
+startSprintBtn.addEventListener("click", () => openSprintModal("start"));
+endSprintBtn.addEventListener("click", () => openSprintModal("end"));
 sprintModalCancelBtn.addEventListener("click", closeSprintModal);
 
 sprintModalOverlay.addEventListener("click", (event) => {
@@ -985,15 +1000,12 @@ sprintForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const name = sprintNameInput.value.trim();
   if (!name) return;
-  const ok = await startSprint(name, parseInt(sprintDurationSelect.value, 10));
+  const durationWeeks = parseInt(sprintDurationSelect.value, 10);
+  const ok =
+    sprintModalMode === "end"
+      ? await endSprint(name, durationWeeks)
+      : await startSprint(name, durationWeeks);
   if (ok) closeSprintModal();
-});
-
-endSprintBtn.addEventListener("click", () => {
-  confirmAction(
-    "End the current sprint? Incomplete tasks will be removed from it.",
-    endSprint
-  );
 });
 
 document.addEventListener("keydown", (event) => {

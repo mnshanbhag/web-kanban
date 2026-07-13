@@ -99,8 +99,10 @@ async def test_only_one_sprint_can_be_active_at_a_time(client):
     assert response.status_code == 400
 
 
-async def test_end_sprint_clears_sprint_id_from_non_done_tasks_but_not_done_tasks(client):
-    await client.post("/api/sprints/start", json={"name": "Sprint 1", "duration_weeks": 1})
+async def test_end_sprint_rolls_non_done_tasks_into_the_new_sprint_but_not_done_tasks(client):
+    sprint_1 = (
+        await client.post("/api/sprints/start", json={"name": "Sprint 1", "duration_weeks": 1})
+    ).json()
 
     todo_id = (
         await client.post("/api/tasks", json={"column": "To Do", "title": "Still open"})
@@ -110,44 +112,67 @@ async def test_end_sprint_clears_sprint_id_from_non_done_tasks_but_not_done_task
     ).json()["id"]
     await client.put(f"/api/tasks/{done_id}/move", json={"to_column": "Done"})
 
-    response = await client.post("/api/sprints/end")
+    response = await client.post(
+        "/api/sprints/end", json={"name": "Sprint 2", "duration_weeks": 1}
+    )
     assert response.status_code == 200
-    ended = response.json()
-    assert ended["status"] == "closed"
-    assert ended["closed_at"] is not None
+    sprint_2 = response.json()
+    assert sprint_2["name"] == "Sprint 2"
+    assert sprint_2["status"] == "active"
 
     with storage._session() as session:
+        old_sprint = session.get(storage.Sprint, sprint_1["id"])
+        assert old_sprint.status == "closed"
+        assert old_sprint.closed_at is not None
+
         todo_task = session.get(storage.Task, storage._parse_id(todo_id))
-        assert todo_task.sprint_id is None
+        assert todo_task.sprint_id == sprint_2["id"]
 
         done_task = session.get(storage.Task, storage._parse_id(done_id))
-        assert done_task.sprint_id is not None
+        assert done_task.sprint_id == sprint_1["id"]
 
 
-async def test_ending_a_sprint_closed_at_is_timezone_aware(client):
+async def test_ending_a_sprint_leaves_the_new_sprint_as_active(client):
     await client.post("/api/sprints/start", json={"name": "Sprint 1", "duration_weeks": 1})
-
-    response = await client.post("/api/sprints/end")
-    closed_at = response.json()["closed_at"]
-
-    from datetime import datetime
-
-    parsed = datetime.fromisoformat(closed_at)
-    assert parsed.tzinfo is not None
-
-
-async def test_ending_a_sprint_clears_active_sprint(client):
-    await client.post("/api/sprints/start", json={"name": "Sprint 1", "duration_weeks": 1})
-    await client.post("/api/sprints/end")
+    ended = (
+        await client.post("/api/sprints/end", json={"name": "Sprint 2", "duration_weeks": 1})
+    ).json()
 
     active = (await client.get("/api/sprints/active")).json()
-    assert active is None
+    assert active == ended
+    assert active["name"] == "Sprint 2"
 
 
 async def test_end_sprint_with_none_active_is_rejected(client):
-    response = await client.post("/api/sprints/end")
+    response = await client.post(
+        "/api/sprints/end", json={"name": "Sprint 2", "duration_weeks": 1}
+    )
 
     assert response.status_code == 400
+
+
+async def test_end_sprint_with_empty_next_name_is_rejected(client):
+    await client.post("/api/sprints/start", json={"name": "Sprint 1", "duration_weeks": 1})
+
+    response = await client.post(
+        "/api/sprints/end", json={"name": "  ", "duration_weeks": 1}
+    )
+
+    assert response.status_code == 400
+    active = (await client.get("/api/sprints/active")).json()
+    assert active["name"] == "Sprint 1"
+
+
+async def test_end_sprint_with_invalid_next_duration_is_rejected(client):
+    await client.post("/api/sprints/start", json={"name": "Sprint 1", "duration_weeks": 1})
+
+    response = await client.post(
+        "/api/sprints/end", json={"name": "Sprint 2", "duration_weeks": 5}
+    )
+
+    assert response.status_code == 400
+    active = (await client.get("/api/sprints/active")).json()
+    assert active["name"] == "Sprint 1"
 
 
 async def test_start_sprint_with_invalid_duration_is_rejected(client):
@@ -166,18 +191,34 @@ async def test_start_sprint_with_empty_name_is_rejected(client):
     assert response.status_code == 400
 
 
-async def test_starting_a_second_sprint_after_the_first_ends_sweeps_rolled_over_task(client):
-    """Incomplete work from a closed sprint (now untagged) rolls forward into the next one."""
-    await client.post("/api/sprints/start", json={"name": "Sprint 1", "duration_weeks": 1})
+async def test_ending_a_sprint_also_sweeps_up_any_untagged_non_done_task(client):
+    """A task created before the very first sprint ever started has no sprint_id; ending the
+    first sprint should still pick it up into the next one, same as start_sprint's sweep."""
     task_id = (
-        await client.post("/api/tasks", json={"column": "To Do", "title": "Carries over"})
+        await client.post("/api/tasks", json={"column": "To Do", "title": "Pre-dates sprints"})
     ).json()["id"]
-    await client.post("/api/sprints/end")
+    await client.post("/api/sprints/start", json={"name": "Sprint 1", "duration_weeks": 1})
 
     sprint_2 = (
-        await client.post("/api/sprints/start", json={"name": "Sprint 2", "duration_weeks": 1})
+        await client.post("/api/sprints/end", json={"name": "Sprint 2", "duration_weeks": 1})
     ).json()
 
     with storage._session() as session:
         task = session.get(storage.Task, storage._parse_id(task_id))
         assert task.sprint_id == sprint_2["id"]
+
+
+async def test_ending_multiple_sprints_in_a_row_rolls_task_forward_each_time(client):
+    await client.post("/api/sprints/start", json={"name": "Sprint 1", "duration_weeks": 1})
+    task_id = (
+        await client.post("/api/tasks", json={"column": "To Do", "title": "Carries over"})
+    ).json()["id"]
+
+    await client.post("/api/sprints/end", json={"name": "Sprint 2", "duration_weeks": 1})
+    sprint_3 = (
+        await client.post("/api/sprints/end", json={"name": "Sprint 3", "duration_weeks": 1})
+    ).json()
+
+    with storage._session() as session:
+        task = session.get(storage.Task, storage._parse_id(task_id))
+        assert task.sprint_id == sprint_3["id"]

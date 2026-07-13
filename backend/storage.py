@@ -626,12 +626,24 @@ def start_sprint(name: str, duration_weeks: int) -> dict:
         return _sprint_to_dict(sprint)
 
 
-def end_sprint() -> dict:
-    """Close the active sprint.
+def end_sprint(next_name: str, next_duration_weeks: int) -> dict:
+    """Close the active sprint and immediately start the next one.
 
-    Clears sprint_id (back to NULL) on every non-Done task that was in it.
-    Done tasks keep their sprint_id permanently as a historical record.
+    Every incomplete (non-Done) task in the closing sprint rolls straight
+    into the new sprint rather than being cleared back to untagged — ending
+    a sprint always transitions directly into the next one, prompted via the
+    frontend's end-sprint modal, so the board is never left without an
+    active sprint once the first one has started. Done tasks keep their
+    sprint_id pointing at the now-closed sprint permanently, as a historical
+    record. Also sweeps up any currently-untagged non-Done task, same as
+    `start_sprint`, since that's still the only way a task not previously in
+    a sprint (e.g. created before the very first sprint ever started) joins.
     """
+    next_name = next_name.strip()
+    if not next_name:
+        raise ValueError("Sprint name cannot be empty")
+    next_duration_weeks = _validate_sprint_duration(next_duration_weeks)
+
     with _session() as session:
         sprint = (
             session.query(Sprint).filter(Sprint.status == SPRINT_STATUS_ACTIVE).first()
@@ -642,7 +654,15 @@ def end_sprint() -> dict:
         sprint.status = SPRINT_STATUS_CLOSED
         sprint.closed_at = datetime.now(timezone.utc)
 
-        active_tasks = (
+        start = date.today()
+        end = start + timedelta(weeks=next_duration_weeks)
+        new_sprint = Sprint(
+            name=next_name, start_date=start, end_date=end, status=SPRINT_STATUS_ACTIVE
+        )
+        session.add(new_sprint)
+        session.flush()
+
+        rollover_tasks = (
             session.query(Task)
             .filter(
                 Task.sprint_id == sprint.id,
@@ -651,9 +671,22 @@ def end_sprint() -> dict:
             )
             .all()
         )
-        for task in active_tasks:
-            task.sprint_id = None
+        for task in rollover_tasks:
+            task.sprint_id = new_sprint.id
+
+        untagged_tasks = (
+            session.query(Task)
+            .filter(
+                Task.sprint_id.is_(None),
+                Task.column != DONE_COLUMN,
+                Task.deleted_at.is_(None),
+                Task.archived_at.is_(None),
+            )
+            .all()
+        )
+        for task in untagged_tasks:
+            task.sprint_id = new_sprint.id
 
         session.commit()
-        session.refresh(sprint)
-        return _sprint_to_dict(sprint)
+        session.refresh(new_sprint)
+        return _sprint_to_dict(new_sprint)

@@ -963,6 +963,12 @@ body {
   font-weight: 700;
 }
 
+.sprint-modal-hint {
+  margin: -0.5rem 0 1rem;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
 .modal form {
   display: flex;
   flex-direction: column;

@@ -239,9 +239,9 @@ def start_sprint(body: SprintStart):
 
 
 @app.post("/api/sprints/end", response_model=SprintOut)
-def end_sprint():
+def end_sprint(body: SprintStart):
     try:
-        return storage.end_sprint()
+        return storage.end_sprint(body.name, body.duration_weeks)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
