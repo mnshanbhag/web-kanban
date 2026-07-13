@@ -121,3 +121,17 @@ class ArchiveAllResponse(BaseModel):
 class ExportOut(BaseModel):
     tasks: dict[str, list[TaskOut]]
     trash: list[TrashedTaskOut]
+
+
+class SprintStart(BaseModel):
+    name: str
+    duration_weeks: int
+
+
+class SprintOut(BaseModel):
+    id: int
+    name: str
+    start_date: str
+    end_date: str
+    status: str
+    closed_at: Optional[str] = None

@@ -47,10 +47,11 @@ SQLAlchemy ORM in `backend/storage.py`. There's no migration tooling; the schema
 first run via `Base.metadata.create_all()`.
 
 The `tasks` table has: `id` (integer primary key), `title`, `description`, `column`, `priority`,
-`blocked_by_id` (a self-referential foreign key), `deleted_at`, `archived_at`, `due_date`, and
-`updated_at`. A separate `task_subtasks` table (FK `ondelete="CASCADE"`) holds each task's
-subtask checklist items, and a `task_notes` table (same FK shape) holds each task's activity log
-entries.
+`blocked_by_id` (a self-referential foreign key), `deleted_at`, `archived_at`, `due_date`,
+`updated_at`, and `sprint_id` (a nullable foreign key into `sprints`). A separate `task_subtasks`
+table (FK `ondelete="CASCADE"`) holds each task's subtask checklist items, a `task_notes` table
+(same FK shape) holds each task's activity log entries, and a `sprints` table (`id`, `name`,
+`start_date`, `end_date`, `status`, `closed_at`) holds sprint records.
 
 - **`id`** is exposed over the API as `"KAN-01"`, `"KAN-02"`, ... (`f"KAN-{id:02d}"`). It's never
   reused: the table uses SQLite's `AUTOINCREMENT` (`sqlite_autoincrement=True`), which guarantees
@@ -141,6 +142,26 @@ exceeded. Both are purely client-side conveniences with no backend involvement.
 A "download backup" button dumps every task (active + trashed) as JSON via `GET /api/export`,
 wrapping the same data `GET /api/tasks` and `GET /api/trash` already return.
 
+### Sprints
+
+A lightweight, optional time-boxing layer over the otherwise-continuous board. A banner above the
+board shows the active sprint's name, date range, and days-remaining (or "Ends today" /
+"Nd overdue" once the end date has passed), with Start/End controls — no per-card sprint badge,
+no backlog view, no story points or burndown chart.
+
+- **Starting the very first sprint** (`POST /api/sprints/start`, `{name, duration_weeks}`,
+  1/2/3/4 weeks from today) sweeps up every currently-untagged, non-Done task into it. New tasks
+  auto-join the active sprint on creation. Only one sprint can be active at a time.
+- **Ending a sprint** (`POST /api/sprints/end`, same body shape) does *not* leave the board
+  without an active sprint — it atomically closes the current sprint and creates + activates the
+  next one in a single step, rolling every non-Done task from the closed sprint straight into the
+  new one. The "End Sprint" button opens a form for the next sprint's name/duration (defaulting
+  to 2 weeks, editable) before this happens. Done tasks keep their `sprint_id` pointing at the
+  now-closed sprint permanently, as a historical record — they're the only way to later answer
+  "what shipped in Sprint N."
+- `GET /api/sprints/active` returns the current active sprint, or `null` if none has ever been
+  started.
+
 ## API
 
 | Method | Path                                     | Body                                                       | Description                                    |
@@ -168,8 +189,13 @@ wrapping the same data `GET /api/tasks` and `GET /api/trash` already return.
 | GET    | `/api/archive`                             | —                                                              | List archived tasks                             |
 | POST   | `/api/archive/{task_id}/unarchive`         | —                                                              | Unarchive a task back to Done                    |
 | GET    | `/api/export`                              | —                                                              | Dump all tasks (active + trashed) as JSON        |
+| POST   | `/api/sprints/start`                       | `{name, duration_weeks}`                                       | Start the first sprint (1/2/3/4 weeks)           |
+| POST   | `/api/sprints/end`                         | `{name, duration_weeks}`                                       | End the active sprint and start the next one     |
+| GET    | `/api/sprints/active`                      | —                                                              | The active sprint, or `null` if none              |
 
 `task_id` is the task's own unique ID (e.g. `"KAN-05"`) — stable across moves, returned by
 `GET`/`POST` and passed back as-is to the endpoints above.
 
 `priority` must be one of `Low`, `Medium`, `High`, `Urgent` — the API returns `400` otherwise.
+
+`duration_weeks` must be one of `1`, `2`, `3`, `4` — the API returns `400` otherwise.
