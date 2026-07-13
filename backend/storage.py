@@ -42,6 +42,7 @@ class Task(Base):
     deleted_at = Column(DateTime, nullable=True)
     archived_at = Column(DateTime, nullable=True)
     due_date = Column(DateTime, nullable=True)
+    updated_at = Column(DateTime, nullable=True)
 
     blocked_by = relationship(
         "Task", remote_side=[id], backref="blocks", foreign_keys=[blocked_by_id]
@@ -183,6 +184,7 @@ def _task_to_dict(session: Session, task: Task) -> dict:
         "due_date": _utc_isoformat(task.due_date) if task.due_date is not None else None,
         "subtask_total": subtask_total,
         "subtask_done": subtask_done,
+        "updated_at": _utc_isoformat(task.updated_at) if task.updated_at is not None else None,
     }
 
 
@@ -228,6 +230,7 @@ def add_task(
             priority=priority,
             blocked_by_id=blocked_by_id,
             due_date=parsed_due_date,
+            updated_at=datetime.now(timezone.utc),
         )
         session.add(task)
         session.commit()
@@ -253,6 +256,7 @@ def update_task(
             _assert_title_available(session, task.column, new_title, exclude_id=task.id)
             task.title = new_title
 
+        task.updated_at = datetime.now(timezone.utc)
         session.commit()
 
 
@@ -268,6 +272,7 @@ def set_blocked_by(task_id: str, blocked_by: Optional[str]) -> None:
         else:
             task.blocked_by_id = None
 
+        task.updated_at = datetime.now(timezone.utc)
         session.commit()
 
 
@@ -281,6 +286,7 @@ def set_due_date(task_id: str, due_date: Optional[str]) -> None:
         else:
             task.due_date = None
 
+        task.updated_at = datetime.now(timezone.utc)
         session.commit()
 
 
@@ -295,6 +301,8 @@ def move_task(task_id: str, to_column: str) -> None:
             _assert_title_available(session, to_column, task.title)
             task.column = to_column
 
+        now = datetime.now(timezone.utc)
+
         if to_column == DONE_COLUMN:
             dependents = (
                 session.query(Task)
@@ -303,7 +311,9 @@ def move_task(task_id: str, to_column: str) -> None:
             )
             for dependent in dependents:
                 dependent.blocked_by_id = None
+                dependent.updated_at = now
 
+        task.updated_at = now
         session.commit()
 
 
