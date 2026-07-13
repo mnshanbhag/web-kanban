@@ -158,6 +158,17 @@
       </div>
       <p class="task-detail-description" id="detail-description"></p>
       <div class="card-tags" id="detail-tags"></div>
+      <div class="subtask-section">
+        <div class="subtask-section-header">
+          <span>Subtasks</span>
+          <span class="subtask-progress-label" id="detail-subtask-progress"></span>
+        </div>
+        <div class="subtask-list" id="detail-subtask-list"></div>
+        <div class="subtask-add-row">
+          <input type="text" id="detail-subtask-input" placeholder="Add a subtask…" maxlength="200" />
+          <button type="button" class="btn-secondary" id="detail-subtask-add-btn">Add</button>
+        </div>
+      </div>
       <form id="task-detail-form">
         <div id="detail-blocked-by-field">
           <label for="detail-blocked-by">Blocked by (task ID)</label>

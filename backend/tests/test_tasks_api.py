@@ -55,6 +55,8 @@ async def test_post_persists_task_to_sqlite_and_get_reads_it_back(client, tmp_pa
             "blocked_by": None,
             "blocks": [],
             "due_date": None,
+            "subtask_total": 0,
+            "subtask_done": 0,
         }
     ]
 
@@ -559,6 +561,176 @@ async def test_engine_creation_is_thread_safe_under_concurrent_first_access(tmp_
         thread.join()
 
     assert errors == []
+
+
+async def test_create_subtask_returns_it_and_lists_it(client):
+    task_id = (
+        await client.post("/api/tasks", json={"column": "To Do", "title": "Ship feature"})
+    ).json()["id"]
+
+    response = await client.post(
+        f"/api/tasks/{task_id}/subtasks", json={"title": "Write tests"}
+    )
+    assert response.status_code == 201
+    subtask = response.json()
+    assert subtask["title"] == "Write tests"
+    assert subtask["done"] is False
+    assert subtask["position"] == 0
+
+    list_response = await client.get(f"/api/tasks/{task_id}/subtasks")
+    assert list_response.status_code == 200
+    assert list_response.json() == [subtask]
+
+
+async def test_subtasks_are_ordered_by_creation(client):
+    task_id = (
+        await client.post("/api/tasks", json={"column": "To Do", "title": "Ship feature"})
+    ).json()["id"]
+
+    await client.post(f"/api/tasks/{task_id}/subtasks", json={"title": "First"})
+    await client.post(f"/api/tasks/{task_id}/subtasks", json={"title": "Second"})
+
+    subtasks = (await client.get(f"/api/tasks/{task_id}/subtasks")).json()
+    assert [s["title"] for s in subtasks] == ["First", "Second"]
+    assert [s["position"] for s in subtasks] == [0, 1]
+
+
+async def test_toggle_subtask_done_updates_board_counts(client):
+    task_id = (
+        await client.post("/api/tasks", json={"column": "To Do", "title": "Ship feature"})
+    ).json()["id"]
+    sub_1 = (
+        await client.post(f"/api/tasks/{task_id}/subtasks", json={"title": "First"})
+    ).json()
+    await client.post(f"/api/tasks/{task_id}/subtasks", json={"title": "Second"})
+
+    board = (await client.get("/api/tasks")).json()
+    task = next(t for t in board["To Do"] if t["id"] == task_id)
+    assert task["subtask_total"] == 2
+    assert task["subtask_done"] == 0
+
+    toggle_response = await client.put(
+        f"/api/tasks/{task_id}/subtasks/{sub_1['id']}", json={"done": True}
+    )
+    assert toggle_response.status_code == 200
+    assert toggle_response.json()["done"] is True
+
+    board = (await client.get("/api/tasks")).json()
+    task = next(t for t in board["To Do"] if t["id"] == task_id)
+    assert task["subtask_total"] == 2
+    assert task["subtask_done"] == 1
+
+
+async def test_delete_subtask_removes_it_and_updates_counts(client):
+    task_id = (
+        await client.post("/api/tasks", json={"column": "To Do", "title": "Ship feature"})
+    ).json()["id"]
+    subtask = (
+        await client.post(f"/api/tasks/{task_id}/subtasks", json={"title": "First"})
+    ).json()
+
+    delete_response = await client.delete(f"/api/tasks/{task_id}/subtasks/{subtask['id']}")
+    assert delete_response.status_code == 204
+
+    assert (await client.get(f"/api/tasks/{task_id}/subtasks")).json() == []
+
+    board = (await client.get("/api/tasks")).json()
+    task = next(t for t in board["To Do"] if t["id"] == task_id)
+    assert task["subtask_total"] == 0
+    assert task["subtask_done"] == 0
+
+
+async def test_permanently_deleting_task_cascades_to_its_subtasks(client):
+    task_id = (
+        await client.post("/api/tasks", json={"column": "To Do", "title": "Ship feature"})
+    ).json()["id"]
+    subtask = (
+        await client.post(f"/api/tasks/{task_id}/subtasks", json={"title": "First"})
+    ).json()
+
+    await client.delete(f"/api/tasks/{task_id}")
+    await client.delete(f"/api/trash/{task_id}")
+
+    with storage._session() as session:
+        assert session.get(storage.Task, storage._parse_id(task_id)) is None
+        assert session.get(storage.TaskSubtask, subtask["id"]) is None
+
+
+async def test_subtask_completion_never_affects_blocking_or_done_eligibility(client):
+    kan_1 = (
+        await client.post("/api/tasks", json={"column": "To Do", "title": "Blocker"})
+    ).json()["id"]
+    kan_2 = (
+        await client.post("/api/tasks", json={"column": "To Do", "title": "Dependent"})
+    ).json()["id"]
+    await client.put(f"/api/tasks/{kan_2}/blocked-by", json={"blocked_by": kan_1})
+
+    subtask = (
+        await client.post(f"/api/tasks/{kan_2}/subtasks", json={"title": "Checklist item"})
+    ).json()
+    toggle_response = await client.put(
+        f"/api/tasks/{kan_2}/subtasks/{subtask['id']}", json={"done": True}
+    )
+    assert toggle_response.status_code == 200
+
+    board = (await client.get("/api/tasks")).json()
+    dependent = next(t for t in board["To Do"] if t["id"] == kan_2)
+    assert dependent["blocked_by"] == kan_1
+
+    move_response = await client.put(f"/api/tasks/{kan_2}/move", json={"to_column": "Done"})
+    assert move_response.status_code == 400
+
+
+async def test_task_with_unchecked_subtasks_can_still_move_to_done(client):
+    task_id = (
+        await client.post("/api/tasks", json={"column": "To Do", "title": "Ship feature"})
+    ).json()["id"]
+    await client.post(f"/api/tasks/{task_id}/subtasks", json={"title": "Not done yet"})
+
+    move_response = await client.put(f"/api/tasks/{task_id}/move", json={"to_column": "Done"})
+    assert move_response.status_code == 200
+
+    board = (await client.get("/api/tasks")).json()
+    task = next(t for t in board["Done"] if t["id"] == task_id)
+    assert task["subtask_total"] == 1
+    assert task["subtask_done"] == 0
+
+
+async def test_subtask_endpoints_404_for_nonexistent_task(client):
+    response = await client.post("/api/tasks/KAN-99/subtasks", json={"title": "X"})
+    assert response.status_code == 404
+
+    response = await client.get("/api/tasks/KAN-99/subtasks")
+    assert response.status_code == 404
+
+
+async def test_subtask_id_mismatched_with_task_returns_404(client):
+    kan_1 = (
+        await client.post("/api/tasks", json={"column": "To Do", "title": "A"})
+    ).json()["id"]
+    kan_2 = (
+        await client.post("/api/tasks", json={"column": "To Do", "title": "B"})
+    ).json()["id"]
+    subtask = (
+        await client.post(f"/api/tasks/{kan_1}/subtasks", json={"title": "Belongs to A"})
+    ).json()
+
+    response = await client.put(
+        f"/api/tasks/{kan_2}/subtasks/{subtask['id']}", json={"done": True}
+    )
+    assert response.status_code == 404
+
+    response = await client.delete(f"/api/tasks/{kan_2}/subtasks/{subtask['id']}")
+    assert response.status_code == 404
+
+
+async def test_create_subtask_with_empty_title_is_rejected(client):
+    task_id = (
+        await client.post("/api/tasks", json={"column": "To Do", "title": "Ship feature"})
+    ).json()["id"]
+
+    response = await client.post(f"/api/tasks/{task_id}/subtasks", json={"title": "   "})
+    assert response.status_code == 400
 
 
 async def test_archiving_a_done_task_removes_it_from_the_board(client):

@@ -593,6 +593,11 @@ body {
   color: var(--text-muted);
 }
 
+.card-tag.subtask-progress {
+  background: var(--hover-tint);
+  color: var(--text-muted);
+}
+
 .priority-pill {
   appearance: none;
   -webkit-appearance: none;
@@ -708,6 +713,100 @@ body {
 
 .task-detail-actions {
   justify-content: space-between;
+}
+
+.subtask-section {
+  margin: 0 0 0.9rem;
+}
+
+.subtask-section-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  margin-bottom: 0.4rem;
+}
+
+.subtask-progress-label {
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.subtask-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  max-height: 40vh;
+  overflow-y: auto;
+  margin-bottom: 0.5rem;
+}
+
+.subtask-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--field-bg);
+  border-radius: 8px;
+  padding: 0.4rem 0.6rem;
+}
+
+.subtask-item input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  padding: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.subtask-item-title {
+  flex: 1;
+  font-size: 0.85rem;
+  word-break: break-word;
+}
+
+.subtask-item-title.done {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+.subtask-item-delete {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0.15rem 0.35rem;
+  border-radius: 4px;
+  transition: background 0.15s var(--ease), color 0.15s var(--ease);
+}
+
+.subtask-item-delete:hover {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.subtask-add-row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.subtask-add-row input {
+  flex: 1;
+}
+
+.subtask-add-row .btn-secondary {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.8rem;
+  padding: 0.5rem 0.8rem;
+}
+
+.subtask-add-row .btn-secondary:hover {
+  background: var(--accent-soft-strong);
 }
 
 .add-task-btn {
