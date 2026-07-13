@@ -24,6 +24,13 @@ Optional per-column WIP cap, editable inline in the column header and persisted 
 `localStorage`; the count badge flags with the existing warning color when exceeded. Purely
 advisory — no backend change. Shipped on `feature_wip_limits` (2026-07-09).
 
+### JSON export (manual backup)
+A "download backup" button dumping all tasks (active + trashed) as JSON — the export half of the
+originally-proposed export/import pair (see remaining import scope under Proposed #6). New
+`GET /api/export` wraps the existing `get_all_boards`/`get_trash`, no new table. Shipped on
+`feature_json_export` (2026-07-13) — also served as a live test that `feature-implementer` can
+use the new `new-endpoint` skill.
+
 ---
 
 ## 🚧 In Progress
@@ -40,18 +47,6 @@ A small ordered checklist of items within a task (e.g. "Write tests", "Update do
 - **Tension:** subtask completion should be purely manual/advisory (same spirit as WIP limits) —
   don't wire it into the Done-column invariants or blocking logic, to avoid new edge cases.
 - Handed to `feature-implementer` (2026-07-13).
-
-### JSON export (manual backup)
-A "download backup" button dumping all tasks (active + trashed) as JSON — the export half of the
-originally-proposed export/import pair.
-- **Why:** the whole app is one local SQLite file with no sync or versioned backups.
-- **Scope:** small — wraps existing `get_all_boards`/`get_trash` behind one new `GET` endpoint,
-  no new table.
-- **Tension:** import (minting new IDs, remapping `blocked_by` references rather than reusing
-  exported IDs) is deliberately **not** in scope for this pass — shipping export first per the
-  original entry's own note, treating import as a separate, later increment.
-- Handed to `feature-implementer` (2026-07-13), as a live test that it can use the new
-  `new-endpoint` skill.
 
 ### Archive Done tasks separately from trash
 A manual "Archive" action on Done cards (alongside the existing delete button), hiding the task
