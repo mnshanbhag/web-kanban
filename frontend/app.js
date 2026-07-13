@@ -229,52 +229,45 @@ function createCardElement(column, task) {
     card.dataset.priority = prioritySelect.value;
     setPriority(task.id, prioritySelect.value);
   });
-  card.appendChild(prioritySelect);
 
-  if (
-    task.blocked_by ||
-    (task.blocks && task.blocks.length) ||
-    task.due_date ||
-    task.subtask_total
-  ) {
-    const tags = document.createElement("div");
-    tags.className = "card-tags";
+  const tags = document.createElement("div");
+  tags.className = "card-tags";
+  tags.appendChild(prioritySelect);
 
-    if (task.blocked_by) {
-      const tag = document.createElement("span");
-      tag.className = "card-tag blocked-by";
-      tag.textContent = `Blocked by ${task.blocked_by}`;
-      tags.appendChild(tag);
-    }
-
-    if (task.blocks && task.blocks.length) {
-      const tag = document.createElement("span");
-      tag.className = "card-tag blocks";
-      tag.textContent = `Blocks ${task.blocks.join(", ")}`;
-      tags.appendChild(tag);
-    }
-
-    if (task.due_date) {
-      const tag = document.createElement("span");
-      if (isOverdue(task.due_date, column)) {
-        tag.className = "card-tag overdue";
-        tag.textContent = "Overdue";
-      } else {
-        tag.className = "card-tag due-date";
-        tag.textContent = `Due ${formatDueDate(task.due_date)}`;
-      }
-      tags.appendChild(tag);
-    }
-
-    if (task.subtask_total) {
-      const tag = document.createElement("span");
-      tag.className = "card-tag subtask-progress";
-      tag.textContent = `${task.subtask_done} / ${task.subtask_total}`;
-      tags.appendChild(tag);
-    }
-
-    card.appendChild(tags);
+  if (task.blocked_by) {
+    const tag = document.createElement("span");
+    tag.className = "card-tag blocked-by";
+    tag.textContent = `Blocked by ${task.blocked_by}`;
+    tags.appendChild(tag);
   }
+
+  if (task.blocks && task.blocks.length) {
+    const tag = document.createElement("span");
+    tag.className = "card-tag blocks";
+    tag.textContent = `Blocks ${task.blocks.join(", ")}`;
+    tags.appendChild(tag);
+  }
+
+  if (task.due_date) {
+    const tag = document.createElement("span");
+    if (isOverdue(task.due_date, column)) {
+      tag.className = "card-tag overdue";
+      tag.textContent = "Overdue";
+    } else {
+      tag.className = "card-tag due-date";
+      tag.textContent = `Due ${formatDueDate(task.due_date)}`;
+    }
+    tags.appendChild(tag);
+  }
+
+  if (task.subtask_total) {
+    const tag = document.createElement("span");
+    tag.className = "card-tag subtask-progress";
+    tag.textContent = `${task.subtask_done} / ${task.subtask_total}`;
+    tags.appendChild(tag);
+  }
+
+  card.appendChild(tags);
 
   if (task.updated_at) {
     const updated = document.createElement("p");
