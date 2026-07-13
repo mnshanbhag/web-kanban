@@ -33,6 +33,8 @@ const errorToast = document.getElementById("error-toast");
 
 const themeToggle = document.getElementById("theme-toggle");
 
+const exportFab = document.getElementById("export-fab");
+
 const trashFab = document.getElementById("trash-fab");
 const trashBadge = document.getElementById("trash-badge");
 const trashModalOverlay = document.getElementById("trash-modal-overlay");
@@ -441,6 +443,25 @@ async function emptyTrash() {
   await renderTrash();
 }
 
+async function downloadExport() {
+  const res = await fetch(`${API_BASE}/export`);
+  if (!res.ok) {
+    await handleApiError(res);
+    return;
+  }
+  const data = await res.json();
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  const timestamp = new Date().toISOString().slice(0, 10);
+  link.download = `canban-backup-${timestamp}.json`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
 function applyFilters() {
   const query = filterSearchInput.value.trim().toLowerCase();
   const priority = filterPrioritySelect.value;
@@ -583,6 +604,8 @@ themeToggle.addEventListener("click", () => {
   root.dataset.theme = next;
   localStorage.setItem("canban-theme", next);
 });
+
+exportFab.addEventListener("click", downloadExport);
 
 trashFab.addEventListener("click", openTrashModal);
 trashModalClose.addEventListener("click", closeTrashModal);
