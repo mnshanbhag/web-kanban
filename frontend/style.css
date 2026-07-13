@@ -659,6 +659,13 @@ body {
   color: var(--text-muted);
 }
 
+.card-updated {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  opacity: 0.75;
+  margin: 0.4rem 0 0;
+}
+
 .priority-pill {
   appearance: none;
   -webkit-appearance: none;
