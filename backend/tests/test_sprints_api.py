@@ -306,3 +306,155 @@ async def test_get_past_sprints_excludes_trashed_completed_tasks(client):
 
     assert response.status_code == 200
     assert response.json()[0]["completed_tasks"] == []
+
+
+async def test_get_planned_sprint_with_none_planned_returns_null(client):
+    response = await client.get("/api/sprints/planned")
+
+    assert response.status_code == 200
+    assert response.json() is None
+
+
+async def test_planning_a_sprint_requires_an_active_sprint(client):
+    response = await client.post(
+        "/api/sprints/plan", json={"name": "Sprint 2", "duration_weeks": 2}
+    )
+
+    assert response.status_code == 400
+
+
+async def test_plan_next_sprint_creates_a_planned_sprint_with_no_dates_yet(client):
+    await client.post("/api/sprints/start", json={"name": "Sprint 1", "duration_weeks": 1})
+
+    response = await client.post(
+        "/api/sprints/plan", json={"name": "Sprint 2", "duration_weeks": 3}
+    )
+
+    assert response.status_code == 200
+    planned = response.json()
+    assert planned["name"] == "Sprint 2"
+    assert planned["status"] == "planned"
+    assert planned["duration_weeks"] == 3
+    assert planned["start_date"] is None
+    assert planned["end_date"] is None
+
+    fetched = (await client.get("/api/sprints/planned")).json()
+    assert fetched == planned
+
+
+async def test_only_one_sprint_can_be_planned_at_a_time(client):
+    await client.post("/api/sprints/start", json={"name": "Sprint 1", "duration_weeks": 1})
+    await client.post("/api/sprints/plan", json={"name": "Sprint 2", "duration_weeks": 2})
+
+    response = await client.post(
+        "/api/sprints/plan", json={"name": "Sprint 2 (again)", "duration_weeks": 1}
+    )
+
+    assert response.status_code == 400
+
+
+async def test_plan_next_sprint_with_empty_name_is_rejected(client):
+    await client.post("/api/sprints/start", json={"name": "Sprint 1", "duration_weeks": 1})
+
+    response = await client.post("/api/sprints/plan", json={"name": "  ", "duration_weeks": 1})
+
+    assert response.status_code == 400
+
+
+async def test_plan_next_sprint_with_invalid_duration_is_rejected(client):
+    await client.post("/api/sprints/start", json={"name": "Sprint 1", "duration_weeks": 1})
+
+    response = await client.post(
+        "/api/sprints/plan", json={"name": "Sprint 2", "duration_weeks": 5}
+    )
+
+    assert response.status_code == 400
+
+
+async def test_end_sprint_promotes_the_planned_sprint_instead_of_opening_the_prompt_flow(client):
+    await client.post("/api/sprints/start", json={"name": "Sprint 1", "duration_weeks": 1})
+    planned = (
+        await client.post("/api/sprints/plan", json={"name": "Sprint 2", "duration_weeks": 3})
+    ).json()
+
+    response = await client.post("/api/sprints/end", json={})
+
+    assert response.status_code == 200
+    promoted = response.json()
+    assert promoted["id"] == planned["id"]
+    assert promoted["name"] == "Sprint 2"
+    assert promoted["status"] == "active"
+
+    today = date.today()
+    assert promoted["start_date"] == today.isoformat()
+    assert promoted["end_date"] == (today + timedelta(weeks=3)).isoformat()
+
+    active = (await client.get("/api/sprints/active")).json()
+    assert active == promoted
+
+    # The promoted sprint is no longer "planned".
+    assert (await client.get("/api/sprints/planned")).json() is None
+
+
+async def test_end_sprint_ignores_a_supplied_name_and_duration_when_a_sprint_is_planned(client):
+    await client.post("/api/sprints/start", json={"name": "Sprint 1", "duration_weeks": 1})
+    await client.post("/api/sprints/plan", json={"name": "Planned Sprint", "duration_weeks": 4})
+
+    response = await client.post(
+        "/api/sprints/end", json={"name": "Ignored Name", "duration_weeks": 1}
+    )
+
+    assert response.status_code == 200
+    promoted = response.json()
+    assert promoted["name"] == "Planned Sprint"
+    today = date.today()
+    assert promoted["end_date"] == (today + timedelta(weeks=4)).isoformat()
+
+
+async def test_end_sprint_promotion_rolls_over_incomplete_tasks_and_sweeps_untagged(client):
+    sprint_1 = (
+        await client.post("/api/sprints/start", json={"name": "Sprint 1", "duration_weeks": 1})
+    ).json()
+    await client.post("/api/sprints/plan", json={"name": "Sprint 2", "duration_weeks": 2})
+
+    todo_id = (
+        await client.post("/api/tasks", json={"column": "To Do", "title": "Still open"})
+    ).json()["id"]
+    done_id = (
+        await client.post("/api/tasks", json={"column": "To Do", "title": "Completed"})
+    ).json()["id"]
+    await client.put(f"/api/tasks/{done_id}/move", json={"to_column": "Done"})
+
+    promoted = (await client.post("/api/sprints/end", json={})).json()
+
+    with storage._session() as session:
+        todo_task = session.get(storage.Task, storage._parse_id(todo_id))
+        assert todo_task.sprint_id == promoted["id"]
+
+        done_task = session.get(storage.Task, storage._parse_id(done_id))
+        assert done_task.sprint_id == sprint_1["id"]
+
+
+async def test_end_sprint_without_a_planned_sprint_still_requires_name_and_duration(client):
+    await client.post("/api/sprints/start", json={"name": "Sprint 1", "duration_weeks": 1})
+
+    response = await client.post("/api/sprints/end", json={})
+
+    assert response.status_code == 400
+    active = (await client.get("/api/sprints/active")).json()
+    assert active["name"] == "Sprint 1"
+
+
+async def test_active_and_closed_sprints_have_no_duration_weeks_in_the_response(client):
+    started = (
+        await client.post("/api/sprints/start", json={"name": "Sprint 1", "duration_weeks": 1})
+    ).json()
+    assert started["duration_weeks"] is None
+
+    ended = (
+        await client.post("/api/sprints/end", json={"name": "Sprint 2", "duration_weeks": 1})
+    ).json()
+    assert ended["duration_weeks"] is None
+
+    past = (await client.get("/api/sprints")).json()
+    assert past[0]["duration_weeks"] is None

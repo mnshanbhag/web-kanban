@@ -84,6 +84,29 @@ existing `get_trash()`/`get_archive()` pattern. A read-only "Past Sprints" panel
 mirroring the trash/archive panel UX) lists each closed sprint's name, date range, and completed
 tasks as chips. Shipped on `feature_past_sprints_view` (2026-07-14).
 
+### Sprint timeline view (last / current / next)
+On startup, shows three sprint panels at once — last, current, and next — instead of just a
+current-sprint banner. Last and next are collapsed `<details>` disclosures by default (native,
+no extra JS); current stays expanded and, together with the board, keeps the existing bordered
+"box" treatment (`.sprint-board-wrap`) so the board still visually reads as belonging to the
+active sprint. New `Sprint.status == "planned"` value alongside `"active"`/`"closed"` —
+`start_date`/`end_date` are now nullable, since a planned sprint has only a `name` and
+`duration_weeks` until it's promoted. A standalone "Plan Next Sprint" control (name + duration,
+no date picker) is usable any time a sprint is active; storage enforces at most one `"planned"`
+sprint at a time, mirroring the existing at-most-one-`"active"` check. `end_sprint` now checks
+for a queued planned sprint first and, if one exists, promotes it straight to active (computing
+real `start_date`/`end_date` from its stored `duration_weeks` as of the promotion moment),
+ignoring any name/duration passed in the request; otherwise it falls back to the original
+prompt-driven flow, which is why `POST /api/sprints/end`'s body fields are now optional. Two new
+endpoints: `POST /api/sprints/plan` and `GET /api/sprints/planned`. The "next" panel only ever
+shows a real sprint once one has been explicitly planned — until then it renders a "nothing
+planned yet" empty state plus the plan form (hidden entirely when no sprint is active), never a
+placeholder guess. The "last" panel is a size-1 read of the already-shipped `GET /api/sprints`
+(most-recently-closed first), reusing its existing list-item rendering.
+**Shipped on `feature_sprint_timeline_view` (2026-07-14) — based on `feature_past_sprints_view`,
+not `main`.** `feature_past_sprints_view` is not yet merged to `main`; land it first (or
+squash/rebase this branch onto `main` appropriately) before merging this one.
+
 ---
 
 ## 🚧 In Progress
@@ -142,40 +165,7 @@ Import side of the export/import pair — the export half was split off and hand
   `AUTOINCREMENT` guarantee has already retired.
 - **Tension:** don't start this until export has shipped and been used at least once.
 
-### 3. Sprint timeline view (last / current / next)
-On startup, show three sprint panels at once — last, current, and next — instead of just a
-current-sprint banner. Last and next are collapsed by default to save space; current stays
-expanded. Explicitly kept as its own later increment, not folded into the Scrum sprints feature's
-first pass (2026-07-13).
-- **Why:** Scrum sprints only ever surfaces the current sprint; the Past sprints view (shipped)
-  exposes history but only via a separate panel a user has to open. This idea instead puts the
-  immediate before/after context of the current sprint on the board by default.
-- **Scope:** medium-to-large, and depends on both Scrum sprints (shipped) and the Past sprints
-  view (shipped — this feature's "last sprint" panel is a size-1 read of `GET /api/sprints`,
-  most-recent-`closed_at`-first).
-- **Locked design (2026-07-14), resolving the open questions below:**
-  - New `Sprint.status == "planned"` value, alongside today's `"active"`/`"closed"`. A planned
-    sprint has a `name` and `duration_weeks` but **no `start_date`/`end_date` yet** — those are
-    only computed at promotion time, which sidesteps the "ended early/extended relative to a
-    planned start date" problem entirely (there is no fixed planned start date to drift from).
-  - Creation: a standalone **"Plan Next Sprint" control** (name + duration, no date picker),
-    available any time a sprint is active. Storage-side: at most one `"planned"` sprint may exist
-    at a time, mirroring the existing at-most-one-`"active"` constraint `start_sprint` already
-    enforces.
-  - Promotion: `end_sprint` checks for an existing planned sprint first. If one exists, it is
-    promoted straight to active (its stored name/duration used to compute real
-    `start_date`/`end_date` as of the promotion moment) instead of opening the name/duration
-    prompt — the existing prompt-driven flow (`end_sprint(next_name, next_duration_weeks)`) is
-    the fallback used only when no planned sprint is queued up.
-- **Tension:** the "next" panel only ever shows a real sprint once one has been explicitly planned
-  via the new control — until then it should render an empty/"nothing planned yet" state, not a
-  placeholder guess.
-- **Status:** scoped and unblocked — the Past sprints view it depended on has shipped
-  (`feature_past_sprints_view`, 2026-07-14) — but not yet handed to `feature-implementer`.
-
----
-
-### 4. PostgreSQL support (for Vercel deployment)
+### 3. PostgreSQL support (for Vercel deployment)
 Make the storage layer able to run against Postgres instead of (or alongside) SQLite, so the app
 can be deployed to Vercel — Vercel's serverless functions have an ephemeral/read-only-ish
 filesystem, so the current `.kanban_data/kanban.db` file won't reliably persist writes across

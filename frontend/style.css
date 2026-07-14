@@ -356,13 +356,130 @@ body {
   display: none;
 }
 
-.sprint-board-wrap {
+.sprint-timeline {
   margin: 1.5rem 2rem 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.sprint-board-wrap {
+  margin: 0;
   border: 1.5px solid var(--accent);
   border-radius: var(--radius);
   overflow: hidden;
   box-shadow: var(--shadow);
   transition: border-color 0.3s var(--ease);
+}
+
+.sprint-panel {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-glass);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  overflow: hidden;
+}
+
+.sprint-panel-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 1.25rem;
+  cursor: pointer;
+  list-style: none;
+  font-size: 0.85rem;
+  user-select: none;
+}
+
+.sprint-panel-summary::-webkit-details-marker {
+  display: none;
+}
+
+.sprint-panel-summary::before {
+  content: "▸";
+  display: inline-block;
+  color: var(--text-muted);
+  transition: transform 0.15s var(--ease);
+}
+
+.sprint-panel[open] .sprint-panel-summary::before {
+  transform: rotate(90deg);
+}
+
+.sprint-panel-label {
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.sprint-panel-summary-info {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  text-align: right;
+}
+
+.sprint-panel-body {
+  padding: 0 1.25rem 1.1rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.8rem;
+}
+
+.sprint-panel-planned {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0 0 0.6rem;
+}
+
+.sprint-panel-name {
+  font-weight: 800;
+  font-size: 0.9rem;
+}
+
+.sprint-panel-dates,
+.sprint-panel-duration {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.sprint-panel-empty-message {
+  margin: 0 0 0.6rem;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.sprint-plan-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.6rem;
+}
+
+.sprint-plan-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.sprint-plan-form input,
+.sprint-plan-form select {
+  font: inherit;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--field-bg);
+  color: var(--text);
+}
+
+.sprint-plan-form input:focus,
+.sprint-plan-form select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-ring);
 }
 
 .sprint-banner {

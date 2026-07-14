@@ -97,10 +97,23 @@ const pastSprintsList = document.getElementById("past-sprints-list");
 const pastSprintsEmptyMessage = document.getElementById("past-sprints-empty-message");
 const pastSprintsModalClose = document.getElementById("past-sprints-modal-close");
 
+const lastSprintSummaryInfo = document.getElementById("last-sprint-summary-info");
+const lastSprintBody = document.getElementById("last-sprint-body");
+
+const nextSprintSummaryInfo = document.getElementById("next-sprint-summary-info");
+const nextSprintPlanned = document.getElementById("next-sprint-planned");
+const nextSprintName = document.getElementById("next-sprint-name");
+const nextSprintDuration = document.getElementById("next-sprint-duration");
+const nextSprintEmptyMessage = document.getElementById("next-sprint-empty-message");
+const planSprintForm = document.getElementById("plan-sprint-form");
+const planSprintNameInput = document.getElementById("plan-sprint-name");
+const planSprintDurationSelect = document.getElementById("plan-sprint-duration");
+
 let toastTimer = null;
 let pendingConfirmAction = null;
 let currentDetailTask = null;
 let activeSprintId = null;
+let plannedSprint = null;
 
 function showError(message) {
   errorToast.textContent = message;
@@ -840,6 +853,7 @@ async function startSprint(name, durationWeeks) {
     return false;
   }
   await refreshSprintBanner();
+  await refreshNextSprintPanel();
   await loadBoard();
   return true;
 }
@@ -855,6 +869,8 @@ async function endSprint(nextName, nextDurationWeeks) {
     return false;
   }
   await refreshSprintBanner();
+  await refreshLastSprintPanel();
+  await refreshNextSprintPanel();
   await loadBoard();
   return true;
 }
@@ -936,6 +952,76 @@ function openPastSprintsModal() {
 
 function closePastSprintsModal() {
   pastSprintsModalOverlay.classList.remove("open");
+}
+
+function renderLastSprintPanel(sprint) {
+  lastSprintBody.replaceChildren();
+
+  if (!sprint) {
+    const empty = document.createElement("p");
+    empty.className = "sprint-panel-empty-message";
+    empty.textContent = "No closed sprints yet.";
+    lastSprintBody.appendChild(empty);
+    lastSprintSummaryInfo.textContent = "No closed sprints yet";
+    return;
+  }
+
+  lastSprintBody.appendChild(createPastSprintItemElement(sprint));
+  lastSprintSummaryInfo.textContent = sprint.name;
+}
+
+async function refreshLastSprintPanel() {
+  // Last sprint is a size-1 read of the past-sprints list, which the API already sorts
+  // most-recently-closed first.
+  const pastSprints = await fetchPastSprints();
+  renderLastSprintPanel(pastSprints[0] || null);
+}
+
+async function fetchPlannedSprint() {
+  const res = await fetch(`${API_BASE}/sprints/planned`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
+function renderNextSprintPanel(sprint) {
+  plannedSprint = sprint;
+
+  if (sprint) {
+    nextSprintPlanned.classList.remove("hidden");
+    nextSprintEmptyMessage.classList.add("hidden");
+    planSprintForm.classList.add("hidden");
+    nextSprintName.textContent = sprint.name;
+    nextSprintDuration.textContent =
+      sprint.duration_weeks === 1 ? "1 week" : `${sprint.duration_weeks} weeks`;
+    nextSprintSummaryInfo.textContent = sprint.name;
+    return;
+  }
+
+  nextSprintPlanned.classList.add("hidden");
+  nextSprintEmptyMessage.classList.remove("hidden");
+  nextSprintSummaryInfo.textContent = "Nothing planned yet";
+  // The plan control only makes sense while a sprint is active -- there's no "next" to queue
+  // up otherwise.
+  planSprintForm.classList.toggle("hidden", activeSprintId === null);
+}
+
+async function refreshNextSprintPanel() {
+  const sprint = await fetchPlannedSprint();
+  renderNextSprintPanel(sprint);
+}
+
+async function planNextSprint(name, durationWeeks) {
+  const res = await fetch(`${API_BASE}/sprints/plan`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, duration_weeks: durationWeeks }),
+  });
+  if (!res.ok) {
+    await handleApiError(res);
+    return false;
+  }
+  await refreshNextSprintPanel();
+  return true;
 }
 
 function applyFilters() {
@@ -1131,7 +1217,16 @@ confirmModalOverlay.addEventListener("click", (event) => {
 });
 
 startSprintBtn.addEventListener("click", () => openSprintModal("start"));
-endSprintBtn.addEventListener("click", () => openSprintModal("end"));
+endSprintBtn.addEventListener("click", async () => {
+  // If a sprint has already been explicitly planned via the "Plan Next Sprint" control, end
+  // it straight away -- the name/duration prompt is only the fallback for when nothing is
+  // queued up yet.
+  if (plannedSprint) {
+    await endSprint(null, null);
+    return;
+  }
+  openSprintModal("end");
+});
 sprintModalCancelBtn.addEventListener("click", closeSprintModal);
 
 sprintModalOverlay.addEventListener("click", (event) => {
@@ -1155,6 +1250,18 @@ sprintForm.addEventListener("submit", async (event) => {
       ? await endSprint(name, durationWeeks)
       : await startSprint(name, durationWeeks);
   if (ok) closeSprintModal();
+});
+
+planSprintForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const name = planSprintNameInput.value.trim();
+  if (!name) return;
+  const durationWeeks = parseInt(planSprintDurationSelect.value, 10);
+  const ok = await planNextSprint(name, durationWeeks);
+  if (ok) {
+    planSprintForm.reset();
+    planSprintDurationSelect.value = "2";
+  }
 });
 
 document.addEventListener("keydown", (event) => {
@@ -1247,6 +1354,10 @@ document.querySelectorAll(".task-list").forEach((list) => {
   });
 });
 
-refreshSprintBanner().then(loadBoard);
+refreshSprintBanner().then(() => {
+  refreshNextSprintPanel();
+  loadBoard();
+});
+refreshLastSprintPanel();
 refreshTrashBadge();
 if (ARCHIVE_ENABLED) refreshArchiveBadge();
