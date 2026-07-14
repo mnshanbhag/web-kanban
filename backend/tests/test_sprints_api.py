@@ -132,6 +132,21 @@ async def test_end_sprint_rolls_non_done_tasks_into_the_new_sprint_but_not_done_
         assert done_task.sprint_id == sprint_1["id"]
 
 
+async def test_ending_a_sprint_sets_its_end_date_to_today_not_its_original_target(client):
+    """A sprint's end_date at start time is only a target -- ending it early or late than that
+    should overwrite it with the real closing date, not leave the original target in place."""
+    sprint_1 = (
+        await client.post("/api/sprints/start", json={"name": "Sprint 1", "duration_weeks": 4})
+    ).json()
+    assert sprint_1["end_date"] == (date.today() + timedelta(weeks=4)).isoformat()
+
+    await client.post("/api/sprints/end", json={"name": "Sprint 2", "duration_weeks": 1})
+
+    with storage._session() as session:
+        closed_sprint = session.get(storage.Sprint, sprint_1["id"])
+        assert closed_sprint.end_date == date.today()
+
+
 async def test_ending_a_sprint_leaves_the_new_sprint_as_active(client):
     await client.post("/api/sprints/start", json={"name": "Sprint 1", "duration_weeks": 1})
     ended = (
@@ -372,7 +387,9 @@ async def test_plan_next_sprint_with_invalid_duration_is_rejected(client):
 
 
 async def test_end_sprint_promotes_the_planned_sprint_instead_of_opening_the_prompt_flow(client):
-    await client.post("/api/sprints/start", json={"name": "Sprint 1", "duration_weeks": 1})
+    sprint_1 = (
+        await client.post("/api/sprints/start", json={"name": "Sprint 1", "duration_weeks": 1})
+    ).json()
     planned = (
         await client.post("/api/sprints/plan", json={"name": "Sprint 2", "duration_weeks": 3})
     ).json()
@@ -394,6 +411,13 @@ async def test_end_sprint_promotes_the_planned_sprint_instead_of_opening_the_pro
 
     # The promoted sprint is no longer "planned".
     assert (await client.get("/api/sprints/planned")).json() is None
+
+    # Sprint 1's own end_date reflects when it actually closed (today), not its original
+    # 1-week target -- same end_date fix as the fallback (non-promoted) path, just exercised
+    # via promotion here.
+    with storage._session() as session:
+        closed_sprint = session.get(storage.Sprint, sprint_1["id"])
+        assert closed_sprint.end_date == today
 
 
 async def test_end_sprint_ignores_a_supplied_name_and_duration_when_a_sprint_is_planned(client):

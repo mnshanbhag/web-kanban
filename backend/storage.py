@@ -748,6 +748,11 @@ def end_sprint(next_name: Optional[str] = None, next_duration_weeks: Optional[in
     to the original prompt-driven flow -- `next_name`/`next_duration_weeks` (required in that
     case) open a brand new sprint, same as before `plan_next_sprint` existed.
 
+    The closing sprint's own `end_date` is overwritten with today's date regardless of what it
+    was set to at start/promotion time -- that original value was only ever a target, and ending
+    a sprint early or late relative to it is normal, so a closed sprint's date range should
+    always reflect what actually happened, not what was originally planned.
+
     Either way, every incomplete (non-Done) task in the closing sprint rolls straight into the
     new sprint rather than being cleared back to untagged. Done tasks keep their sprint_id
     pointing at the now-closed sprint permanently, as a historical record. Also sweeps up any
@@ -766,10 +771,15 @@ def end_sprint(next_name: Optional[str] = None, next_duration_weeks: Optional[in
             session.query(Sprint).filter(Sprint.status == SPRINT_STATUS_PLANNED).first()
         )
 
+        start = date.today()
+
         sprint.status = SPRINT_STATUS_CLOSED
         sprint.closed_at = datetime.now(timezone.utc)
+        # The sprint's end_date was set at start_sprint/plan time as a target, not a promise --
+        # ending it earlier or later than that target is normal. Overwrite it with the actual
+        # closing date so a closed sprint's date range always reflects what really happened.
+        sprint.end_date = start
 
-        start = date.today()
         if planned is not None:
             new_sprint = planned
             new_sprint.start_date = start

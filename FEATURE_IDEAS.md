@@ -58,6 +58,16 @@ create the very first sprint. Done tasks still keep their `sprint_id` pointing a
 now-closed sprint permanently, as a historical record. Shipped on `feature_scrum_sprints`
 (2026-07-13).
 
+**Revised again (2026-07-14):** the banner-only display wasn't enough to make it clear the board's
+cards belonged to the active sprint ("cards are just dangling"), so the banner and board are now
+wrapped together in a single bordered `.sprint-board-wrap` box. That redesign surfaced a real bug:
+the Done column had never been sprint-scoped — it showed every completed task ever, from every
+sprint, so cards finished in an earlier sprint appeared to be inside "this sprint's" box. Fixed by
+exposing `sprint_id` on `TaskOut` and filtering Done client-side to the active sprint's own
+completions (pre-sprint legacy Done tasks with `sprint_id == null` are still shown, since there's
+nowhere else to surface them). Shipped alongside the Past sprints view entry below, on
+`feature_past_sprints_view` (2026-07-14).
+
 ### Per-task activity log (append-only notes)
 A timestamped list of freeform notes on a task, separate from the single mutable `description`.
 New `TaskNote` table (FK `ondelete="CASCADE"`), `GET`/`POST /api/tasks/{task_id}/notes`, and UI
@@ -103,6 +113,25 @@ shows a real sprint once one has been explicitly planned — until then it rende
 planned yet" empty state plus the plan form (hidden entirely when no sprint is active), never a
 placeholder guess. The "last" panel is a size-1 read of the already-shipped `GET /api/sprints`
 (most-recently-closed first), reusing its existing list-item rendering.
+
+**Revised during live testing (2026-07-14):** three follow-up fixes surfaced from actually using
+the timeline:
+- The "last sprint" `<details>` summary showed the sprint's name in a muted, easy-to-miss style —
+  bumped `.sprint-panel-summary-info` to full-contrast bold text so it's legible without expanding.
+- The old "Past Sprints" panel duplicated the sprint already shown in the new "Last Sprint" panel.
+  Renamed to "Older Sprints" and `renderPastSprints()` now `.slice(1)`s the list to exclude the
+  most-recently-closed sprint (still fetched from the same unfiltered `GET /api/sprints`).
+- A closed sprint's `end_date` was never updated at close time, so ending a sprint early (or late)
+  left its stored `end_date` showing the original target instead of when it actually closed —
+  also made Sprint N+1 visually overlap Sprint N's date range. `end_sprint` now overwrites the
+  *closing* sprint's `end_date` with the real closing date every time, regardless of which path
+  (promotion or fallback) closed it.
+- Added: while a sprint is planned but not yet promoted, the "Next Sprint" panel shows a
+  computed-not-stored "Starts ~&lt;date&gt; (estimated)" hint derived from the *current* active
+  sprint's own `end_date` — purely a preview, so it self-corrects for free if the current sprint
+  ends earlier/later than expected (the real `start_date` is still only computed at promotion
+  time, unchanged from the original design).
+
 **Shipped on `feature_sprint_timeline_view` (2026-07-14) — based on `feature_past_sprints_view`,
 not `main`.** `feature_past_sprints_view` is not yet merged to `main`; land it first (or
 squash/rebase this branch onto `main` appropriately) before merging this one.

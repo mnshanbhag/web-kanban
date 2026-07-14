@@ -104,6 +104,7 @@ const nextSprintSummaryInfo = document.getElementById("next-sprint-summary-info"
 const nextSprintPlanned = document.getElementById("next-sprint-planned");
 const nextSprintName = document.getElementById("next-sprint-name");
 const nextSprintDuration = document.getElementById("next-sprint-duration");
+const nextSprintAnticipated = document.getElementById("next-sprint-anticipated");
 const nextSprintEmptyMessage = document.getElementById("next-sprint-empty-message");
 const planSprintForm = document.getElementById("plan-sprint-form");
 const planSprintNameInput = document.getElementById("plan-sprint-name");
@@ -113,6 +114,7 @@ let toastTimer = null;
 let pendingConfirmAction = null;
 let currentDetailTask = null;
 let activeSprintId = null;
+let activeSprint = null;
 let plannedSprint = null;
 
 function showError(message) {
@@ -819,6 +821,7 @@ function formatDaysRemaining(endDateString) {
 
 function renderSprintBanner(sprint) {
   activeSprintId = sprint ? sprint.id : null;
+  activeSprint = sprint;
 
   if (!sprint) {
     sprintBannerActive.classList.add("hidden");
@@ -938,11 +941,14 @@ function createPastSprintItemElement(sprint) {
 
 async function renderPastSprints() {
   const pastSprints = await fetchPastSprints();
+  // The most-recently-closed sprint already has its own dedicated "Last Sprint" panel on
+  // the board -- this modal is for everything older than that, so skip it here.
+  const olderSprints = pastSprints.slice(1);
   pastSprintsList.replaceChildren();
-  for (const sprint of pastSprints) {
+  for (const sprint of olderSprints) {
     pastSprintsList.appendChild(createPastSprintItemElement(sprint));
   }
-  pastSprintsEmptyMessage.classList.toggle("hidden", pastSprints.length > 0);
+  pastSprintsEmptyMessage.classList.toggle("hidden", olderSprints.length > 0);
 }
 
 function openPastSprintsModal() {
@@ -993,6 +999,15 @@ function renderNextSprintPanel(sprint) {
     nextSprintName.textContent = sprint.name;
     nextSprintDuration.textContent =
       sprint.duration_weeks === 1 ? "1 week" : `${sprint.duration_weeks} weeks`;
+    // A planned sprint has no real start_date yet (see storage.plan_next_sprint) -- it's only
+    // computed at promotion time, from whatever day End Sprint actually gets clicked. This is
+    // just a preview based on the current sprint's end_date, not a stored commitment: if the
+    // current sprint ends earlier or later than its own end_date, the real promoted start_date
+    // will differ from this estimate accordingly.
+    nextSprintAnticipated.textContent =
+      activeSprint && activeSprint.end_date
+        ? `Starts ~${formatSprintDate(activeSprint.end_date)} (estimated)`
+        : "";
     nextSprintSummaryInfo.textContent = sprint.name;
     return;
   }

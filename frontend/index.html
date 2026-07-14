@@ -148,6 +148,7 @@
         <div class="sprint-panel-planned hidden" id="next-sprint-planned">
           <span class="sprint-panel-name" id="next-sprint-name"></span>
           <span class="sprint-panel-duration" id="next-sprint-duration"></span>
+          <span class="sprint-panel-dates" id="next-sprint-anticipated"></span>
         </div>
         <p class="sprint-panel-empty-message hidden" id="next-sprint-empty-message">
           Nothing planned yet.
@@ -300,7 +301,7 @@
     </svg>
   </button>
 
-  <button class="trash-fab past-sprints-fab" id="past-sprints-fab" title="Past Sprints" aria-label="Past Sprints">
+  <button class="trash-fab past-sprints-fab" id="past-sprints-fab" title="Older Sprints" aria-label="Older Sprints">
     <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <circle cx="12" cy="13" r="8"></circle>
       <path d="M12 9v4l3 2"></path>
@@ -336,10 +337,10 @@
   <div class="modal-overlay" id="past-sprints-modal-overlay">
     <div class="modal trash-modal">
       <div class="trash-modal-header">
-        <h3>Past Sprints</h3>
+        <h3>Older Sprints</h3>
       </div>
       <div class="trash-list" id="past-sprints-list"></div>
-      <p class="trash-empty-message hidden" id="past-sprints-empty-message">No closed sprints yet.</p>
+      <p class="trash-empty-message hidden" id="past-sprints-empty-message">No older sprints yet.</p>
       <div class="modal-actions">
         <button type="button" class="btn-secondary" id="past-sprints-modal-close">Close</button>
       </div>

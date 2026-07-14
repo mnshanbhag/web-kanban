@@ -18,7 +18,7 @@ Not idempotent: re-running against a board that already has tasks with these tit
 will fail on the very first request with a 409 (duplicate title in that column).
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import httpx
 
@@ -109,6 +109,7 @@ def main() -> None:
     with httpx.Client(base_url=API) as client:
         resp = client.post("/sprints/start", json=SPRINT_1)
         resp.raise_for_status()
+        sprint_1_id = resp.json()["id"]
         print(f"Started sprint: {resp.json()['name']}")
 
         title_to_id: dict[str, str] = {}
@@ -174,6 +175,18 @@ def main() -> None:
             task.updated_at = datetime.now(timezone.utc) - timedelta(days=days_ago)
         session.commit()
     print(f"Backdated updated_at on {len(BACKDATE_DAYS)} tasks via storage layer")
+
+    # Sprint 1 and Sprint 2 both get created "now" (seconds apart) by the flow above, which
+    # would otherwise leave Sprint 1 with an end_date in the future and overlapping Sprint 2's
+    # range entirely. Backdate Sprint 1 by its own duration so it reads as a real, already-
+    # finished sprint that Sprint 2 picks up right where it left off (end_date == Sprint 2's
+    # start_date) -- has no API surface either, same reasoning as updated_at above.
+    with storage._session() as session:
+        sprint_1 = session.get(storage.Sprint, sprint_1_id)
+        sprint_1.start_date = date.today() - timedelta(weeks=SPRINT_1["duration_weeks"])
+        sprint_1.end_date = date.today()
+        session.commit()
+    print("Backdated Sprint 1's start/end dates so it no longer overlaps Sprint 2")
 
     print(f"\nSeeded {len(TASKS)} tasks total across Sprint 1 (closed) and Sprint 2 (active).")
 
