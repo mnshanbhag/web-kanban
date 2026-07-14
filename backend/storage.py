@@ -745,3 +745,38 @@ def end_sprint(next_name: str, next_duration_weeks: int) -> dict:
         session.commit()
         session.refresh(new_sprint)
         return _sprint_to_dict(new_sprint)
+
+
+def get_past_sprints() -> list[dict]:
+    """Closed sprints, most-recently-closed first, each annotated with the Done tasks that
+    completed during it.
+
+    Done tasks keep their sprint_id pointing at the now-closed sprint permanently (see
+    end_sprint's docstring), so "which tasks completed in sprint N" is just a query for Done
+    tasks with sprint_id == N — no new column needed.
+    """
+    with _session() as session:
+        sprints = (
+            session.query(Sprint)
+            .filter(Sprint.status == SPRINT_STATUS_CLOSED)
+            .order_by(Sprint.closed_at.desc(), Sprint.id.desc())
+            .all()
+        )
+        result = []
+        for sprint in sprints:
+            completed_tasks = (
+                session.query(Task)
+                .filter(
+                    Task.sprint_id == sprint.id,
+                    Task.column == DONE_COLUMN,
+                    Task.deleted_at.is_(None),
+                )
+                .order_by(Task.title)
+                .all()
+            )
+            sprint_dict = _sprint_to_dict(sprint)
+            sprint_dict["completed_tasks"] = [
+                {"id": _display_id(t.id), "title": t.title} for t in completed_tasks
+            ]
+            result.append(sprint_dict)
+        return result

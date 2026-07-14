@@ -661,6 +661,11 @@ body {
   color: var(--text-muted);
 }
 
+.card-tag.completed {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
 .card-updated {
   font-size: 0.68rem;
   color: var(--text-muted);
@@ -1185,6 +1190,16 @@ body {
   box-shadow: var(--fab-shadow-hover);
 }
 
+.past-sprints-fab {
+  right: 13.5rem;
+}
+
+.past-sprints-fab:hover {
+  color: var(--accent);
+  transform: translateY(-2px);
+  box-shadow: var(--fab-shadow-hover);
+}
+
 .trash-badge {
   position: absolute;
   top: -4px;
@@ -1309,6 +1324,17 @@ body {
 
 .trash-item-actions .unarchive-btn:hover {
   background: var(--accent-soft-strong);
+}
+
+.past-sprint-tasks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.past-sprint-tasks-empty {
+  color: var(--text-muted);
+  font-size: 0.75rem;
 }
 
 .toast {

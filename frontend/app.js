@@ -91,6 +91,12 @@ const sprintDurationSelect = document.getElementById("sprint-duration");
 const sprintModalCancelBtn = document.getElementById("sprint-modal-cancel");
 let sprintModalMode = "start";
 
+const pastSprintsFab = document.getElementById("past-sprints-fab");
+const pastSprintsModalOverlay = document.getElementById("past-sprints-modal-overlay");
+const pastSprintsList = document.getElementById("past-sprints-list");
+const pastSprintsEmptyMessage = document.getElementById("past-sprints-empty-message");
+const pastSprintsModalClose = document.getElementById("past-sprints-modal-close");
+
 let toastTimer = null;
 let pendingConfirmAction = null;
 let currentDetailTask = null;
@@ -854,6 +860,69 @@ function closeSprintModal() {
   sprintModalOverlay.classList.remove("open");
 }
 
+async function fetchPastSprints() {
+  const res = await fetch(`${API_BASE}/sprints`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+function createPastSprintItemElement(sprint) {
+  const el = document.createElement("div");
+  el.className = "trash-item";
+
+  const header = document.createElement("div");
+  header.className = "trash-item-header";
+
+  const title = document.createElement("span");
+  title.className = "trash-item-title";
+  title.textContent = sprint.name;
+  header.appendChild(title);
+
+  const dates = document.createElement("span");
+  dates.className = "trash-item-id";
+  dates.textContent = `${formatSprintDate(sprint.start_date)} – ${formatSprintDate(sprint.end_date)}`;
+  header.appendChild(dates);
+
+  el.appendChild(header);
+
+  const tasksWrap = document.createElement("div");
+  tasksWrap.className = "past-sprint-tasks";
+  if (sprint.completed_tasks.length) {
+    for (const task of sprint.completed_tasks) {
+      const chip = document.createElement("span");
+      chip.className = "card-tag completed";
+      chip.textContent = `${task.id} ${task.title}`;
+      tasksWrap.appendChild(chip);
+    }
+  } else {
+    const empty = document.createElement("span");
+    empty.className = "past-sprint-tasks-empty";
+    empty.textContent = "No tasks completed.";
+    tasksWrap.appendChild(empty);
+  }
+  el.appendChild(tasksWrap);
+
+  return el;
+}
+
+async function renderPastSprints() {
+  const pastSprints = await fetchPastSprints();
+  pastSprintsList.replaceChildren();
+  for (const sprint of pastSprints) {
+    pastSprintsList.appendChild(createPastSprintItemElement(sprint));
+  }
+  pastSprintsEmptyMessage.classList.toggle("hidden", pastSprints.length > 0);
+}
+
+function openPastSprintsModal() {
+  pastSprintsModalOverlay.classList.add("open");
+  renderPastSprints();
+}
+
+function closePastSprintsModal() {
+  pastSprintsModalOverlay.classList.remove("open");
+}
+
 function applyFilters() {
   const query = filterSearchInput.value.trim().toLowerCase();
   const priority = filterPrioritySelect.value;
@@ -1054,6 +1123,13 @@ sprintModalOverlay.addEventListener("click", (event) => {
   if (event.target === sprintModalOverlay) closeSprintModal();
 });
 
+pastSprintsFab.addEventListener("click", openPastSprintsModal);
+pastSprintsModalClose.addEventListener("click", closePastSprintsModal);
+
+pastSprintsModalOverlay.addEventListener("click", (event) => {
+  if (event.target === pastSprintsModalOverlay) closePastSprintsModal();
+});
+
 sprintForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const name = sprintNameInput.value.trim();
@@ -1073,6 +1149,7 @@ document.addEventListener("keydown", (event) => {
   else if (trashModalOverlay.classList.contains("open")) closeTrashModal();
   else if (archiveModalOverlay.classList.contains("open")) closeArchiveModal();
   else if (sprintModalOverlay.classList.contains("open")) closeSprintModal();
+  else if (pastSprintsModalOverlay.classList.contains("open")) closePastSprintsModal();
   else if (modalOverlay.classList.contains("open")) closeModal();
 });
 

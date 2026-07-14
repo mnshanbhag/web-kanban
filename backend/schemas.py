@@ -135,3 +135,12 @@ class SprintOut(BaseModel):
     end_date: str
     status: str
     closed_at: Optional[str] = None
+
+
+class SprintCompletedTaskOut(BaseModel):
+    id: str
+    title: str
+
+
+class PastSprintOut(SprintOut):
+    completed_tasks: list[SprintCompletedTaskOut] = []

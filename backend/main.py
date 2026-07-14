@@ -17,6 +17,7 @@ from backend.schemas import (
     IdResponse,
     NoteCreate,
     NoteOut,
+    PastSprintOut,
     PriorityResponse,
     RestoreResponse,
     SprintOut,
@@ -269,6 +270,11 @@ def end_sprint(body: SprintStart):
 @app.get("/api/sprints/active", response_model=Optional[SprintOut])
 def get_active_sprint():
     return storage.get_active_sprint()
+
+
+@app.get("/api/sprints", response_model=list[PastSprintOut])
+def list_past_sprints():
+    return storage.get_past_sprints()
 
 
 app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
