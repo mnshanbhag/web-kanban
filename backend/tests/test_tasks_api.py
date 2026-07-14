@@ -60,6 +60,7 @@ async def test_post_persists_task_to_sqlite_and_get_reads_it_back(client, tmp_pa
             "subtask_total": 0,
             "subtask_done": 0,
             "updated_at": board["To Do"][0]["updated_at"],
+            "sprint_id": None,
         }
     ]
 

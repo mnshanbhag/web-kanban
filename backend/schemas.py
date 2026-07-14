@@ -67,6 +67,7 @@ class TaskOut(BaseModel):
     subtask_total: int = 0
     subtask_done: int = 0
     updated_at: Optional[str] = None
+    sprint_id: Optional[int] = None
 
 
 class TrashedTaskOut(BaseModel):

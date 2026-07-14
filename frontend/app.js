@@ -100,6 +100,7 @@ const pastSprintsModalClose = document.getElementById("past-sprints-modal-close"
 let toastTimer = null;
 let pendingConfirmAction = null;
 let currentDetailTask = null;
+let activeSprintId = null;
 
 function showError(message) {
   errorToast.textContent = message;
@@ -114,11 +115,23 @@ async function loadBoard() {
   renderBoard(board);
 }
 
+function tasksForColumn(column, board) {
+  const tasks = board[column] || [];
+  if (column !== DONE_COLUMN || activeSprintId === null) return tasks;
+
+  // Done is the one column that isn't inherently sprint-scoped (it holds
+  // every completion ever, not just this sprint's) -- filter it down to the
+  // active sprint's completions, but keep legacy tasks that predate sprints
+  // entirely (sprint_id null) since they'd otherwise vanish from view with
+  // nowhere else to surface them.
+  return tasks.filter((task) => task.sprint_id === activeSprintId || task.sprint_id == null);
+}
+
 function renderBoard(board) {
   for (const column of COLUMNS) {
     const list = document.querySelector(`.task-list[data-column="${column}"]`);
     const countEl = document.getElementById(`count-${column}`);
-    const tasks = board[column] || [];
+    const tasks = tasksForColumn(column, board);
 
     list.replaceChildren();
     for (const task of tasks) {
@@ -792,6 +805,8 @@ function formatDaysRemaining(endDateString) {
 }
 
 function renderSprintBanner(sprint) {
+  activeSprintId = sprint ? sprint.id : null;
+
   if (!sprint) {
     sprintBannerActive.classList.add("hidden");
     sprintBannerInactive.classList.remove("hidden");
@@ -1232,7 +1247,6 @@ document.querySelectorAll(".task-list").forEach((list) => {
   });
 });
 
-loadBoard();
+refreshSprintBanner().then(loadBoard);
 refreshTrashBadge();
 if (ARCHIVE_ENABLED) refreshArchiveBadge();
-refreshSprintBanner();

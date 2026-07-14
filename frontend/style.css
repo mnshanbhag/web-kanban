@@ -356,12 +356,21 @@ body {
   display: none;
 }
 
+.sprint-board-wrap {
+  margin: 1.5rem 2rem 2rem;
+  border: 1.5px solid var(--accent);
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: var(--shadow);
+  transition: border-color 0.3s var(--ease);
+}
+
 .sprint-banner {
-  padding: 0.75rem 2rem;
-  background: var(--surface-glass);
+  padding: 0.75rem 1.5rem;
+  background: var(--accent-soft);
   backdrop-filter: blur(14px) saturate(160%);
   -webkit-backdrop-filter: blur(14px) saturate(160%);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1.5px solid var(--accent);
   transition: background 0.3s var(--ease), border-color 0.3s var(--ease);
 }
 
@@ -420,7 +429,7 @@ body {
 .board {
   display: flex;
   gap: 1.25rem;
-  padding: 2rem;
+  padding: 1.5rem 2rem 2rem;
   align-items: flex-start;
   overflow-x: auto;
 }

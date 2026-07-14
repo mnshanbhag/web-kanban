@@ -213,6 +213,7 @@ def _task_to_dict(session: Session, task: Task) -> dict:
         "subtask_total": subtask_total,
         "subtask_done": subtask_done,
         "updated_at": _utc_isoformat(task.updated_at) if task.updated_at is not None else None,
+        "sprint_id": task.sprint_id,
     }
 
 
