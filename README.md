@@ -68,7 +68,9 @@ The `tasks` table has: `id` (integer primary key), `title`, `description`, `colu
 `updated_at`, and `sprint_id` (a nullable foreign key into `sprints`). A separate `task_subtasks`
 table (FK `ondelete="CASCADE"`) holds each task's subtask checklist items, a `task_notes` table
 (same FK shape) holds each task's activity log entries, and a `sprints` table (`id`, `name`,
-`start_date`, `end_date`, `status`, `closed_at`) holds sprint records.
+`start_date`, `end_date`, `duration_weeks`, `status`, `closed_at`) holds sprint records —
+`start_date`/`end_date` are nullable to support a `"planned"` sprint, which has only a name and
+`duration_weeks` until it's promoted to active.
 
 - **`id`** is exposed over the API as `"KAN-01"`, `"KAN-02"`, ... (`f"KAN-{id:02d}"`). It's never
   reused: the table uses SQLite's `AUTOINCREMENT` (`sqlite_autoincrement=True`), which guarantees
@@ -165,23 +167,39 @@ wrapping the same data `GET /api/tasks` and `GET /api/trash` already return.
 
 ### Sprints
 
-A lightweight, optional time-boxing layer over the otherwise-continuous board. A banner above the
-board shows the active sprint's name, date range, and days-remaining (or "Ends today" /
-"Nd overdue" once the end date has passed), with Start/End controls — no per-card sprint badge,
-no backlog view, no story points or burndown chart.
+A lightweight, optional time-boxing layer over the otherwise-continuous board. Rather than just a
+current-sprint banner, the board shows three sprint panels at once: **Last Sprint** and **Next
+Sprint** are collapsed-by-default disclosures above/below the current sprint, which keeps its own
+bordered box (visually "owning" the board) with a banner showing its name, date range, and
+days-remaining (or "Ends today" / "Nd overdue" once the end date has passed) plus Start/End
+controls — no per-card sprint badge, no backlog view, no story points or burndown chart.
 
 - **Starting the very first sprint** (`POST /api/sprints/start`, `{name, duration_weeks}`,
   1/2/3/4 weeks from today) sweeps up every currently-untagged, non-Done task into it. New tasks
   auto-join the active sprint on creation. Only one sprint can be active at a time.
-- **Ending a sprint** (`POST /api/sprints/end`, same body shape) does *not* leave the board
-  without an active sprint — it atomically closes the current sprint and creates + activates the
-  next one in a single step, rolling every non-Done task from the closed sprint straight into the
-  new one. The "End Sprint" button opens a form for the next sprint's name/duration (defaulting
-  to 2 weeks, editable) before this happens. Done tasks keep their `sprint_id` pointing at the
-  now-closed sprint permanently, as a historical record — they're the only way to later answer
-  "what shipped in Sprint N."
+- **Planning the next sprint ahead of time** (`POST /api/sprints/plan`, `{name, duration_weeks}`)
+  queues up a name/duration without committing to a start date — shown in the "Next Sprint" panel
+  with a computed, self-correcting "Starts ~&lt;date&gt; (estimated)" hint. At most one sprint can
+  be planned at a time. `GET /api/sprints/planned` returns it, or `null`.
+- **Ending a sprint** (`POST /api/sprints/end`, `{name, duration_weeks}` — both optional) does
+  *not* leave the board without an active sprint — it atomically closes the current sprint and
+  activates the next one in a single step, rolling every non-Done task from the closed sprint
+  straight into the new one. If a sprint was already planned, it's promoted straight to active
+  (computing real dates from its stored duration) and any `name`/`duration_weeks` in the request
+  body is ignored; otherwise the "End Sprint" button opens a form for the next sprint's
+  name/duration (defaulting to 2 weeks, editable), which is why the body fields are optional.
+  A closed sprint's `end_date` is always overwritten with the real closing date. Done tasks keep
+  their `sprint_id` pointing at the now-closed sprint permanently, as a historical record —
+  they're the only way to later answer "what shipped in Sprint N."
+- **Sprint names are unique** across every sprint regardless of status — starting, planning, or
+  ending into a name already used by another sprint (active, planned, or long-closed) returns
+  `409`.
 - `GET /api/sprints/active` returns the current active sprint, or `null` if none has ever been
   started.
+- `GET /api/sprints` returns every *closed* sprint, most-recently-closed first, each with a
+  `completed_tasks` summary. The frontend splits this into two views: the single most-recently-
+  closed sprint gets its own "Last Sprint" panel, and everything older lives behind an "Older
+  Sprints" FAB + modal.
 
 ## API
 
@@ -211,8 +229,11 @@ no backlog view, no story points or burndown chart.
 | POST   | `/api/archive/{task_id}/unarchive`         | —                                                              | Unarchive a task back to Done                    |
 | GET    | `/api/export`                              | —                                                              | Dump all tasks (active + trashed) as JSON        |
 | POST   | `/api/sprints/start`                       | `{name, duration_weeks}`                                       | Start the first sprint (1/2/3/4 weeks)           |
-| POST   | `/api/sprints/end`                         | `{name, duration_weeks}`                                       | End the active sprint and start the next one     |
+| POST   | `/api/sprints/end`                         | `{name?, duration_weeks?}`                                      | End the active sprint and start/promote the next |
 | GET    | `/api/sprints/active`                      | —                                                              | The active sprint, or `null` if none              |
+| POST   | `/api/sprints/plan`                        | `{name, duration_weeks}`                                       | Queue up the next sprint ahead of time            |
+| GET    | `/api/sprints/planned`                     | —                                                              | The planned sprint, or `null` if none              |
+| GET    | `/api/sprints`                             | —                                                              | Every closed sprint, most-recently-closed first    |
 
 `task_id` is the task's own unique ID (e.g. `"KAN-05"`) — stable across moves, returned by
 `GET`/`POST` and passed back as-is to the endpoints above.

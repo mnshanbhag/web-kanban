@@ -67,6 +67,7 @@ class TaskOut(BaseModel):
     subtask_total: int = 0
     subtask_done: int = 0
     updated_at: Optional[str] = None
+    sprint_id: Optional[int] = None
 
 
 class TrashedTaskOut(BaseModel):
@@ -128,10 +129,30 @@ class SprintStart(BaseModel):
     duration_weeks: int
 
 
+class SprintEnd(BaseModel):
+    name: Optional[str] = None
+    duration_weeks: Optional[int] = None
+
+
+class SprintPlan(BaseModel):
+    name: str
+    duration_weeks: int
+
+
 class SprintOut(BaseModel):
     id: int
     name: str
-    start_date: str
-    end_date: str
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    duration_weeks: Optional[int] = None
     status: str
     closed_at: Optional[str] = None
+
+
+class SprintCompletedTaskOut(BaseModel):
+    id: str
+    title: str
+
+
+class PastSprintOut(SprintOut):
+    completed_tasks: list[SprintCompletedTaskOut] = []

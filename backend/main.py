@@ -17,9 +17,12 @@ from backend.schemas import (
     IdResponse,
     NoteCreate,
     NoteOut,
+    PastSprintOut,
     PriorityResponse,
     RestoreResponse,
+    SprintEnd,
     SprintOut,
+    SprintPlan,
     SprintStart,
     SubtaskCreate,
     SubtaskOut,
@@ -254,14 +257,18 @@ def export_data():
 def start_sprint(body: SprintStart):
     try:
         return storage.start_sprint(body.name, body.duration_weeks)
+    except FileExistsError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post("/api/sprints/end", response_model=SprintOut)
-def end_sprint(body: SprintStart):
+def end_sprint(body: SprintEnd):
     try:
         return storage.end_sprint(body.name, body.duration_weeks)
+    except FileExistsError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -269,6 +276,26 @@ def end_sprint(body: SprintStart):
 @app.get("/api/sprints/active", response_model=Optional[SprintOut])
 def get_active_sprint():
     return storage.get_active_sprint()
+
+
+@app.post("/api/sprints/plan", response_model=SprintOut)
+def plan_next_sprint(body: SprintPlan):
+    try:
+        return storage.plan_next_sprint(body.name, body.duration_weeks)
+    except FileExistsError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/sprints/planned", response_model=Optional[SprintOut])
+def get_planned_sprint():
+    return storage.get_planned_sprint()
+
+
+@app.get("/api/sprints", response_model=list[PastSprintOut])
+def list_past_sprints():
+    return storage.get_past_sprints()
 
 
 app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")

@@ -61,25 +61,35 @@
     <button type="button" class="filter-clear hidden" id="filter-clear">Clear filters</button>
   </div>
 
-  <div class="sprint-banner" id="sprint-banner">
-    <div class="sprint-banner-active hidden" id="sprint-banner-active">
-      <div class="sprint-banner-info">
-        <svg class="sprint-banner-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"></path>
-        </svg>
-        <span class="sprint-banner-name" id="sprint-banner-name"></span>
-        <span class="sprint-banner-dates" id="sprint-banner-dates"></span>
-        <span class="sprint-banner-days" id="sprint-banner-days"></span>
-      </div>
-      <button type="button" class="btn-secondary danger" id="end-sprint-btn">End Sprint</button>
-    </div>
-    <div class="sprint-banner-inactive hidden" id="sprint-banner-inactive">
-      <span class="sprint-banner-inactive-text">No active sprint</span>
-      <button type="button" class="btn-primary" id="start-sprint-btn">Start Sprint</button>
-    </div>
-  </div>
+  <div class="sprint-timeline">
+    <details class="sprint-panel sprint-panel-last" id="sprint-panel-last">
+      <summary class="sprint-panel-summary">
+        <span class="sprint-panel-label">Last Sprint</span>
+        <span class="sprint-panel-summary-info" id="last-sprint-summary-info"></span>
+      </summary>
+      <div class="sprint-panel-body" id="last-sprint-body"></div>
+    </details>
 
-  <main class="board" id="board">
+    <div class="sprint-board-wrap">
+      <div class="sprint-banner" id="sprint-banner">
+        <div class="sprint-banner-active hidden" id="sprint-banner-active">
+          <div class="sprint-banner-info">
+            <svg class="sprint-banner-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"></path>
+            </svg>
+            <span class="sprint-banner-name" id="sprint-banner-name"></span>
+            <span class="sprint-banner-dates" id="sprint-banner-dates"></span>
+            <span class="sprint-banner-days" id="sprint-banner-days"></span>
+          </div>
+          <button type="button" class="btn-secondary danger" id="end-sprint-btn">End Sprint</button>
+        </div>
+        <div class="sprint-banner-inactive hidden" id="sprint-banner-inactive">
+          <span class="sprint-banner-inactive-text">No active sprint</span>
+          <button type="button" class="btn-primary" id="start-sprint-btn">Start Sprint</button>
+        </div>
+      </div>
+
+      <main class="board" id="board">
     <section class="column" data-column="To Do">
       <div class="column-header">
         <h2>To Do</h2>
@@ -126,7 +136,40 @@
       <div class="task-list" data-column="Done"></div>
       <button class="archive-all-btn hidden" id="archive-all-btn">Archive All</button>
     </section>
-  </main>
+    </main>
+    </div>
+
+    <details class="sprint-panel sprint-panel-next" id="sprint-panel-next">
+      <summary class="sprint-panel-summary">
+        <span class="sprint-panel-label">Next Sprint</span>
+        <span class="sprint-panel-summary-info" id="next-sprint-summary-info"></span>
+      </summary>
+      <div class="sprint-panel-body" id="next-sprint-body">
+        <div class="sprint-panel-planned hidden" id="next-sprint-planned">
+          <span class="sprint-panel-name" id="next-sprint-name"></span>
+          <span class="sprint-panel-duration" id="next-sprint-duration"></span>
+          <span class="sprint-panel-dates" id="next-sprint-anticipated"></span>
+        </div>
+        <p class="sprint-panel-empty-message hidden" id="next-sprint-empty-message">
+          Nothing planned yet.
+        </p>
+        <form id="plan-sprint-form" class="sprint-plan-form hidden">
+          <label for="plan-sprint-name">Name</label>
+          <input type="text" id="plan-sprint-name" required maxlength="120" placeholder="e.g. Sprint 13" />
+
+          <label for="plan-sprint-duration">Duration</label>
+          <select id="plan-sprint-duration">
+            <option value="1">1 week</option>
+            <option value="2" selected>2 weeks</option>
+            <option value="3">3 weeks</option>
+            <option value="4">4 weeks</option>
+          </select>
+
+          <button type="submit" class="btn-primary">Plan Next Sprint</button>
+        </form>
+      </div>
+    </details>
+  </div>
 
   <div class="modal-overlay" id="modal-overlay">
     <div class="modal">
@@ -258,6 +301,14 @@
     </svg>
   </button>
 
+  <button class="trash-fab past-sprints-fab" id="past-sprints-fab" title="Older Sprints" aria-label="Older Sprints">
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="13" r="8"></circle>
+      <path d="M12 9v4l3 2"></path>
+      <path d="M9 2h6"></path>
+    </svg>
+  </button>
+
   <button class="trash-fab" id="trash-fab" title="Recycle Bin" aria-label="Recycle Bin">
     <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <polyline points="3 6 5 6 21 6"></polyline>
@@ -279,6 +330,19 @@
       <p class="trash-empty-message hidden" id="trash-empty-message">Recycle bin is empty.</p>
       <div class="modal-actions">
         <button type="button" class="btn-secondary" id="trash-modal-close">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="past-sprints-modal-overlay">
+    <div class="modal trash-modal">
+      <div class="trash-modal-header">
+        <h3>Older Sprints</h3>
+      </div>
+      <div class="trash-list" id="past-sprints-list"></div>
+      <p class="trash-empty-message hidden" id="past-sprints-empty-message">No older sprints yet.</p>
+      <div class="modal-actions">
+        <button type="button" class="btn-secondary" id="past-sprints-modal-close">Close</button>
       </div>
     </div>
   </div>

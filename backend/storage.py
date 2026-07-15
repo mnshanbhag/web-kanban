@@ -27,6 +27,7 @@ DEFAULT_PRIORITY = "Medium"
 
 SPRINT_STATUS_ACTIVE = "active"
 SPRINT_STATUS_CLOSED = "closed"
+SPRINT_STATUS_PLANNED = "planned"
 SPRINT_DURATIONS_WEEKS = (1, 2, 3, 4)
 
 
@@ -40,8 +41,16 @@ class Sprint(Base):
 
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
-    start_date = Column(Date, nullable=False)
-    end_date = Column(Date, nullable=False)
+    # A "planned" sprint has a name + duration_weeks but no start_date/end_date yet -- those
+    # are only computed at promotion time (see end_sprint), which sidesteps any "planned sprint
+    # started early/late relative to a fixed date" problem since there's no fixed planned start
+    # date to drift from. Nullable to support that state; active/closed sprints always have both.
+    start_date = Column(Date, nullable=True)
+    end_date = Column(Date, nullable=True)
+    # Only meaningful while status == "planned" -- the duration a planned sprint will get once
+    # promoted to active. Active/closed sprints don't need it since their date range is already
+    # fixed on start_date/end_date.
+    duration_weeks = Column(Integer, nullable=True)
     status = Column(String, nullable=False, default=SPRINT_STATUS_ACTIVE)
     closed_at = Column(DateTime, nullable=True)
 
@@ -213,6 +222,7 @@ def _task_to_dict(session: Session, task: Task) -> dict:
         "subtask_total": subtask_total,
         "subtask_done": subtask_done,
         "updated_at": _utc_isoformat(task.updated_at) if task.updated_at is not None else None,
+        "sprint_id": task.sprint_id,
     }
 
 
@@ -620,11 +630,21 @@ def _sprint_to_dict(sprint: Sprint) -> dict:
     return {
         "id": sprint.id,
         "name": sprint.name,
-        "start_date": sprint.start_date.isoformat(),
-        "end_date": sprint.end_date.isoformat(),
+        "start_date": sprint.start_date.isoformat() if sprint.start_date is not None else None,
+        "end_date": sprint.end_date.isoformat() if sprint.end_date is not None else None,
+        "duration_weeks": sprint.duration_weeks,
         "status": sprint.status,
         "closed_at": _utc_isoformat(sprint.closed_at) if sprint.closed_at is not None else None,
     }
+
+
+def _assert_sprint_name_available(session: Session, name: str) -> None:
+    """Sprint names are never reused, even across closed sprints -- unlike task titles (unique
+    only within a column), a sprint's name has no scoping concept to make a collision safe, and
+    the Last/Older Sprints panels render by name, so two same-named sprints would be
+    indistinguishable there."""
+    if session.query(Sprint).filter(Sprint.name == name).first() is not None:
+        raise FileExistsError(f"A sprint named '{name}' already exists")
 
 
 def get_active_sprint() -> Optional[dict]:
@@ -654,6 +674,7 @@ def start_sprint(name: str, duration_weeks: int) -> dict:
         )
         if existing is not None:
             raise ValueError("A sprint is already active")
+        _assert_sprint_name_available(session, name)
 
         start = date.today()
         end = start + timedelta(weeks=duration_weeks)
@@ -681,24 +702,75 @@ def start_sprint(name: str, duration_weeks: int) -> dict:
         return _sprint_to_dict(sprint)
 
 
-def end_sprint(next_name: str, next_duration_weeks: int) -> dict:
-    """Close the active sprint and immediately start the next one.
+def get_planned_sprint() -> Optional[dict]:
+    with _session() as session:
+        sprint = (
+            session.query(Sprint).filter(Sprint.status == SPRINT_STATUS_PLANNED).first()
+        )
+        return _sprint_to_dict(sprint) if sprint is not None else None
 
-    Every incomplete (non-Done) task in the closing sprint rolls straight
-    into the new sprint rather than being cleared back to untagged — ending
-    a sprint always transitions directly into the next one, prompted via the
-    frontend's end-sprint modal, so the board is never left without an
-    active sprint once the first one has started. Done tasks keep their
-    sprint_id pointing at the now-closed sprint permanently, as a historical
-    record. Also sweeps up any currently-untagged non-Done task, same as
-    `start_sprint`, since that's still the only way a task not previously in
-    a sprint (e.g. created before the very first sprint ever started) joins.
+
+def plan_next_sprint(name: str, duration_weeks: int) -> dict:
+    """Queue up the next sprint's name/duration ahead of time, without committing to a start
+    date yet. At most one sprint may be "planned" at a time, mirroring the at-most-one-active
+    check `start_sprint` already enforces. `end_sprint` promotes this straight to active
+    (computing real start_date/end_date from `duration_weeks` as of the promotion moment)
+    instead of opening its name/duration prompt.
     """
-    next_name = next_name.strip()
-    if not next_name:
+    name = name.strip()
+    if not name:
         raise ValueError("Sprint name cannot be empty")
-    next_duration_weeks = _validate_sprint_duration(next_duration_weeks)
+    duration_weeks = _validate_sprint_duration(duration_weeks)
 
+    with _session() as session:
+        active = (
+            session.query(Sprint).filter(Sprint.status == SPRINT_STATUS_ACTIVE).first()
+        )
+        if active is None:
+            raise ValueError("Cannot plan a next sprint while no sprint is active")
+
+        existing = (
+            session.query(Sprint).filter(Sprint.status == SPRINT_STATUS_PLANNED).first()
+        )
+        if existing is not None:
+            raise ValueError("A sprint is already planned")
+        _assert_sprint_name_available(session, name)
+
+        sprint = Sprint(
+            name=name,
+            start_date=None,
+            end_date=None,
+            duration_weeks=duration_weeks,
+            status=SPRINT_STATUS_PLANNED,
+        )
+        session.add(sprint)
+        session.commit()
+        session.refresh(sprint)
+        return _sprint_to_dict(sprint)
+
+
+def end_sprint(next_name: Optional[str] = None, next_duration_weeks: Optional[int] = None) -> dict:
+    """Close the active sprint and immediately promote the next one, so the board is never left
+    without an active sprint once the first one has started.
+
+    Checks for a queued planned sprint first: if one exists, it's promoted straight to active
+    (its stored `duration_weeks` used to compute real `start_date`/`end_date` as of this
+    promotion moment), and `next_name`/`next_duration_weeks` are ignored. Otherwise, falls back
+    to the original prompt-driven flow -- `next_name`/`next_duration_weeks` (required in that
+    case) open a brand new sprint, same as before `plan_next_sprint` existed.
+
+    The closing sprint's own `end_date` is overwritten with today's date regardless of what it
+    was set to at start/promotion time -- that original value was only ever a target, and ending
+    a sprint early or late relative to it is normal, so a closed sprint's date range should
+    always reflect what actually happened, not what was originally planned.
+
+    Either way, every incomplete (non-Done) task in the closing sprint rolls straight into the
+    new sprint rather than being cleared back to untagged. Done tasks keep their sprint_id
+    pointing at the now-closed sprint permanently, as a historical record. Also sweeps up any
+    currently-untagged non-Done task, same as `start_sprint`, since that's still the only way a
+    task not previously in a sprint (e.g. created before the very first sprint ever started)
+    joins.
+    """
     with _session() as session:
         sprint = (
             session.query(Sprint).filter(Sprint.status == SPRINT_STATUS_ACTIVE).first()
@@ -706,15 +778,38 @@ def end_sprint(next_name: str, next_duration_weeks: int) -> dict:
         if sprint is None:
             raise ValueError("No sprint is currently active")
 
-        sprint.status = SPRINT_STATUS_CLOSED
-        sprint.closed_at = datetime.now(timezone.utc)
+        planned = (
+            session.query(Sprint).filter(Sprint.status == SPRINT_STATUS_PLANNED).first()
+        )
 
         start = date.today()
-        end = start + timedelta(weeks=next_duration_weeks)
-        new_sprint = Sprint(
-            name=next_name, start_date=start, end_date=end, status=SPRINT_STATUS_ACTIVE
-        )
-        session.add(new_sprint)
+
+        sprint.status = SPRINT_STATUS_CLOSED
+        sprint.closed_at = datetime.now(timezone.utc)
+        # The sprint's end_date was set at start_sprint/plan time as a target, not a promise --
+        # ending it earlier or later than that target is normal. Overwrite it with the actual
+        # closing date so a closed sprint's date range always reflects what really happened.
+        sprint.end_date = start
+
+        if planned is not None:
+            new_sprint = planned
+            new_sprint.start_date = start
+            new_sprint.end_date = start + timedelta(weeks=planned.duration_weeks)
+            new_sprint.status = SPRINT_STATUS_ACTIVE
+        else:
+            next_name = (next_name or "").strip()
+            if not next_name:
+                raise ValueError(
+                    "No sprint is planned; name and duration_weeks are required to end the "
+                    "sprint"
+                )
+            next_duration_weeks = _validate_sprint_duration(next_duration_weeks)
+            _assert_sprint_name_available(session, next_name)
+            end = start + timedelta(weeks=next_duration_weeks)
+            new_sprint = Sprint(
+                name=next_name, start_date=start, end_date=end, status=SPRINT_STATUS_ACTIVE
+            )
+            session.add(new_sprint)
         session.flush()
 
         rollover_tasks = (
@@ -745,3 +840,38 @@ def end_sprint(next_name: str, next_duration_weeks: int) -> dict:
         session.commit()
         session.refresh(new_sprint)
         return _sprint_to_dict(new_sprint)
+
+
+def get_past_sprints() -> list[dict]:
+    """Closed sprints, most-recently-closed first, each annotated with the Done tasks that
+    completed during it.
+
+    Done tasks keep their sprint_id pointing at the now-closed sprint permanently (see
+    end_sprint's docstring), so "which tasks completed in sprint N" is just a query for Done
+    tasks with sprint_id == N — no new column needed.
+    """
+    with _session() as session:
+        sprints = (
+            session.query(Sprint)
+            .filter(Sprint.status == SPRINT_STATUS_CLOSED)
+            .order_by(Sprint.closed_at.desc(), Sprint.id.desc())
+            .all()
+        )
+        result = []
+        for sprint in sprints:
+            completed_tasks = (
+                session.query(Task)
+                .filter(
+                    Task.sprint_id == sprint.id,
+                    Task.column == DONE_COLUMN,
+                    Task.deleted_at.is_(None),
+                )
+                .order_by(Task.title)
+                .all()
+            )
+            sprint_dict = _sprint_to_dict(sprint)
+            sprint_dict["completed_tasks"] = [
+                {"id": _display_id(t.id), "title": t.title} for t in completed_tasks
+            ]
+            result.append(sprint_dict)
+        return result

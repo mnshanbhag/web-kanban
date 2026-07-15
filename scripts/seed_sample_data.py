@@ -4,14 +4,21 @@ Creates tasks through the real HTTP API (so normal validation runs), then backda
 few tasks' `updated_at` directly through the storage layer -- the only way to do that,
 since no API mutates `updated_at` (it's always stamped with "now" on every write).
 
+Also seeds a small sprint history: Sprint 1 starts, several tasks are completed, and
+the sprint is closed (rolling everything still open into Sprint 2, which stays active
+with one completion of its own) -- so the board demos both the Past Sprints view and
+the current-sprint Done filtering out of the box.
+
 Usage: start the dev server first (`python -m uvicorn backend.main:app --reload`),
-then run `python -m scripts.seed_sample_data` from the repo root.
+then run `python -m scripts.seed_sample_data` from the repo root. Run it against a
+blank database (delete `.kanban_data/kanban.db` first) since it always starts a fresh
+Sprint 1 unconditionally.
 
 Not idempotent: re-running against a board that already has tasks with these titles
 will fail on the very first request with a 409 (duplicate title in that column).
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import httpx
 
@@ -31,6 +38,9 @@ def _future(days: int) -> str:
 def _past(days: int) -> str:
     return (datetime.now(timezone.utc) - timedelta(days=days)).date().isoformat()
 
+
+SPRINT_1 = {"name": "Sprint 1", "duration_weeks": 2}
+SPRINT_2 = {"name": "Sprint 2", "duration_weeks": 2}
 
 # (column, title, description, priority, due_date)
 TASKS = [
@@ -78,16 +88,29 @@ BACKDATE_DAYS = {
     "Onboard new dev environment doc": 60,
 }
 
+# Titles moved to Done before Sprint 1 ends. "Onboard new dev environment doc" and
+# "Release v1.4.0" are created directly into Done above, so they need no move -- a
+# task auto-joins whichever sprint is active at creation time, regardless of column.
+DONE_DURING_SPRINT_1 = [
+    "Design login page mockups",
+    "Design system: button component audit",
+    "Fix due-date timezone bug",
+    "Fix flaky logout test",
+]
+
+# Titles moved to Done after Sprint 2 starts, demonstrating this sprint's own progress
+# (as opposed to the rolled-over carryover from Sprint 1).
+DONE_DURING_SPRINT_2 = [
+    "Add rate limiting to API",
+]
+
 
 def main() -> None:
     with httpx.Client(base_url=API) as client:
-        active = client.get("/sprints/active").json()
-        if active is None:
-            resp = client.post("/sprints/start", json={"name": "Sprint 1", "duration_weeks": 2})
-            resp.raise_for_status()
-            print(f"Started sprint: {resp.json()['name']}")
-        else:
-            print(f"Using already-active sprint: {active['name']}")
+        resp = client.post("/sprints/start", json=SPRINT_1)
+        resp.raise_for_status()
+        sprint_1_id = resp.json()["id"]
+        print(f"Started sprint: {resp.json()['name']}")
 
         title_to_id: dict[str, str] = {}
         for column, title, description, priority, due_date in TASKS:
@@ -129,6 +152,20 @@ def main() -> None:
                 client.post(f"/tasks/{task_id}/notes", json={"body": body}).raise_for_status()
             print(f"{task_id} ({title}): added {len(notes)} note(s)")
 
+        for title in DONE_DURING_SPRINT_1:
+            task_id = title_to_id[title]
+            client.put(f"/tasks/{task_id}/move", json={"to_column": "Done"}).raise_for_status()
+        print(f"Completed {len(DONE_DURING_SPRINT_1)} more task(s) before ending Sprint 1")
+
+        resp = client.post("/sprints/end", json=SPRINT_2)
+        resp.raise_for_status()
+        print(f"Ended Sprint 1, started {resp.json()['name']}")
+
+        for title in DONE_DURING_SPRINT_2:
+            task_id = title_to_id[title]
+            client.put(f"/tasks/{task_id}/move", json={"to_column": "Done"}).raise_for_status()
+        print(f"Completed {len(DONE_DURING_SPRINT_2)} task(s) during Sprint 2")
+
     # Backdating `updated_at` has no API surface -- go straight through storage.
     with storage._session() as session:
         for title, days_ago in BACKDATE_DAYS.items():
@@ -139,7 +176,19 @@ def main() -> None:
         session.commit()
     print(f"Backdated updated_at on {len(BACKDATE_DAYS)} tasks via storage layer")
 
-    print(f"\nSeeded {len(TASKS)} tasks total.")
+    # Sprint 1 and Sprint 2 both get created "now" (seconds apart) by the flow above, which
+    # would otherwise leave Sprint 1 with an end_date in the future and overlapping Sprint 2's
+    # range entirely. Backdate Sprint 1 by its own duration so it reads as a real, already-
+    # finished sprint that Sprint 2 picks up right where it left off (end_date == Sprint 2's
+    # start_date) -- has no API surface either, same reasoning as updated_at above.
+    with storage._session() as session:
+        sprint_1 = session.get(storage.Sprint, sprint_1_id)
+        sprint_1.start_date = date.today() - timedelta(weeks=SPRINT_1["duration_weeks"])
+        sprint_1.end_date = date.today()
+        session.commit()
+    print("Backdated Sprint 1's start/end dates so it no longer overlaps Sprint 2")
+
+    print(f"\nSeeded {len(TASKS)} tasks total across Sprint 1 (closed) and Sprint 2 (active).")
 
 
 if __name__ == "__main__":

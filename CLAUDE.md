@@ -89,12 +89,70 @@ key for what's proposed/in-progress/shipped/shelved.
   checking this flag first; don't build new features against the assumption that Archive is
   reachable from the UI.
 - Scrum sprints: only one `Sprint` can have `status == "active"` at a time — `start_sprint`
-  raises if one already exists. `end_sprint` never leaves the board without an active sprint: it
-  atomically closes the current sprint and creates+activates the next one in the same call,
-  rolling every non-Done task from the closed sprint into the new one (plus sweeping up any
-  still-untagged non-Done task, the only way that happens being a task created before the very
-  first sprint). Done tasks keep their `sprint_id` pointing at the now-closed sprint permanently
-  as a historical record — don't null it out or reassign it.
+  raises if one already exists. Sprint names are also globally unique across every sprint
+  regardless of status (active, planned, or long-closed) — `storage._assert_sprint_name_available`
+  (mirrors the per-column `_assert_title_available` used for task titles) is checked in
+  `start_sprint`, `plan_next_sprint`, and `end_sprint`'s fallback (prompt-driven) branch, raising
+  `FileExistsError` → `409`. This matters because the Last/Older Sprints panels render by name —
+  two same-named closed sprints would otherwise be indistinguishable there. `end_sprint`'s
+  promotion branch doesn't re-check: a planned sprint's name was already validated once at
+  `plan_next_sprint` time and sprint records are never renamed afterward, so it can't have gone
+  stale by promotion time. `end_sprint` never leaves the board without an active sprint: it
+  atomically closes the current sprint and creates+activates the next one in the same call (or
+  promotes an already-`"planned"` sprint if one is queued — see below), rolling every non-Done
+  task from the closed sprint into the new one (plus sweeping up any still-untagged non-Done
+  task, the only way that happens being a task created before the very first sprint). Done tasks
+  keep their `sprint_id` pointing at the now-closed sprint permanently as a historical record —
+  don't null it out or reassign it. A sprint's `end_date` is a target, not a promise: `end_sprint`
+  overwrites the *closing* sprint's `end_date` with the real closing date (today) every time,
+  regardless of whether it closed early, on time, or late relative to whatever `end_date` was
+  computed at start/promotion time — don't assume a closed sprint's stored `end_date` still
+  matches what `start_sprint`/promotion originally set. The sprint banner and the board are
+  wrapped together in a single bordered `.sprint-board-wrap` box (`frontend/index.html`/
+  `style.css`) so the board visually reads as belonging to the active sprint — this replaced an
+  earlier "banner-only" thin-bar treatment that didn't make that ownership legible on its own.
+  That redesign surfaced a real gap: Done is the one column that was never sprint-scoped (it
+  showed every completion ever, from every sprint). `TaskOut` now exposes `sprint_id`, and
+  `frontend/app.js`'s `tasksForColumn()` filters the Done column client-side down to the active
+  sprint's own completions (legacy tasks with `sprint_id == null`, predating any sprint ever
+  starting, are still shown there since there's nowhere else to surface them) — don't remove this
+  filtering on the assumption Done should always show every task; that assumption is what caused
+  the bug in the first place.
+- Past sprints: `storage.get_past_sprints()` (mirrors the `get_trash()`/`get_archive()` pattern)
+  returns every closed sprint, most-recently-closed first, each annotated with a
+  `completed_tasks` summary — the Done tasks whose `sprint_id` matches, which falls straight out
+  of the invariant above with no new column needed. `GET /api/sprints` exposes it. The frontend
+  splits this into two surfaces rather than one: the single most-recently-closed sprint gets its
+  own "Last Sprint" panel (a `<details>` disclosure, collapsed by default, directly above the
+  current-sprint box — see below), and everything *older* than that lives in a separate
+  "Older Sprints" panel (FAB + modal, mirroring the trash/archive panel UX; despite the id/JS
+  names still saying `past-sprints-*` internally) — `renderPastSprints()` explicitly
+  `.slice(1)`s the list to exclude the last sprint, since that one already has its own panel and
+  showing it twice would be redundant. Don't render the full unsliced list in that modal again.
+  Both panels share `createPastSprintItemElement()` to render a sprint's date range + completed-
+  task chips, but it takes a `showHeader` option (default `true`): the Older Sprints *list* needs
+  each item's own name/date header since it shows several sprints at once, but the Last Sprint
+  *panel* already shows the name and date range in its own summary row (`renderLastSprintPanel()`
+  builds that row itself, name + dates as separate spans) — call it with `showHeader: false` there
+  so the name isn't rendered a second time in the body.
+- Sprint timeline (last / current / next): alongside `"active"`/`"closed"`, a `Sprint.status` can
+  be `"planned"` — a queued-up next sprint with only a `name`/`duration_weeks`, no `start_date`/
+  `end_date` yet (both nullable; only computed at promotion time, so there's no fixed planned
+  start date to drift from if the current sprint ends earlier or later than expected).
+  `storage.plan_next_sprint()` requires an active sprint and enforces at most one `"planned"`
+  sprint at a time, mirroring `start_sprint`'s at-most-one-`"active"` check;
+  `storage.get_planned_sprint()` reads it back. `end_sprint` checks for a queued planned sprint
+  first and promotes it straight to active if one exists (computing real dates from its stored
+  `duration_weeks` as of the promotion moment, ignoring any name/duration passed to the call),
+  falling back to the original prompt-driven flow otherwise — which is why `POST /api/sprints/end`
+  body fields are optional now, validated at call time instead of via required Pydantic fields.
+  New endpoints: `POST /api/sprints/plan`, `GET /api/sprints/planned`. Frontend: a "Next Sprint"
+  `<details>` panel (collapsed by default, below the current-sprint box) shows the planned
+  sprint's name/duration once one exists, plus a computed-not-stored "Starts ~&lt;date&gt;
+  (estimated)" hint derived from the *current* active sprint's own `end_date` (never a placeholder
+  guess before something's actually been planned) — this is why the estimate self-corrects if the
+  current sprint ends earlier/later than expected, without needing any extra logic: the real
+  `start_date` is computed fresh at promotion time regardless of what this preview showed.
 - `frontend/app.js` — no build tooling, no framework. 4 columns (`COLUMNS` = To Do, In Progress,
   In Review, Done — no separate "Blocked" column).
   Talks to the API with `fetch`. Drag-and-drop just calls the move endpoint directly now; there's

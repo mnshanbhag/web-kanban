@@ -91,9 +91,31 @@ const sprintDurationSelect = document.getElementById("sprint-duration");
 const sprintModalCancelBtn = document.getElementById("sprint-modal-cancel");
 let sprintModalMode = "start";
 
+const pastSprintsFab = document.getElementById("past-sprints-fab");
+const pastSprintsModalOverlay = document.getElementById("past-sprints-modal-overlay");
+const pastSprintsList = document.getElementById("past-sprints-list");
+const pastSprintsEmptyMessage = document.getElementById("past-sprints-empty-message");
+const pastSprintsModalClose = document.getElementById("past-sprints-modal-close");
+
+const lastSprintSummaryInfo = document.getElementById("last-sprint-summary-info");
+const lastSprintBody = document.getElementById("last-sprint-body");
+
+const nextSprintSummaryInfo = document.getElementById("next-sprint-summary-info");
+const nextSprintPlanned = document.getElementById("next-sprint-planned");
+const nextSprintName = document.getElementById("next-sprint-name");
+const nextSprintDuration = document.getElementById("next-sprint-duration");
+const nextSprintAnticipated = document.getElementById("next-sprint-anticipated");
+const nextSprintEmptyMessage = document.getElementById("next-sprint-empty-message");
+const planSprintForm = document.getElementById("plan-sprint-form");
+const planSprintNameInput = document.getElementById("plan-sprint-name");
+const planSprintDurationSelect = document.getElementById("plan-sprint-duration");
+
 let toastTimer = null;
 let pendingConfirmAction = null;
 let currentDetailTask = null;
+let activeSprintId = null;
+let activeSprint = null;
+let plannedSprint = null;
 
 function showError(message) {
   errorToast.textContent = message;
@@ -108,11 +130,23 @@ async function loadBoard() {
   renderBoard(board);
 }
 
+function tasksForColumn(column, board) {
+  const tasks = board[column] || [];
+  if (column !== DONE_COLUMN || activeSprintId === null) return tasks;
+
+  // Done is the one column that isn't inherently sprint-scoped (it holds
+  // every completion ever, not just this sprint's) -- filter it down to the
+  // active sprint's completions, but keep legacy tasks that predate sprints
+  // entirely (sprint_id null) since they'd otherwise vanish from view with
+  // nowhere else to surface them.
+  return tasks.filter((task) => task.sprint_id === activeSprintId || task.sprint_id == null);
+}
+
 function renderBoard(board) {
   for (const column of COLUMNS) {
     const list = document.querySelector(`.task-list[data-column="${column}"]`);
     const countEl = document.getElementById(`count-${column}`);
-    const tasks = board[column] || [];
+    const tasks = tasksForColumn(column, board);
 
     list.replaceChildren();
     for (const task of tasks) {
@@ -786,6 +820,9 @@ function formatDaysRemaining(endDateString) {
 }
 
 function renderSprintBanner(sprint) {
+  activeSprintId = sprint ? sprint.id : null;
+  activeSprint = sprint;
+
   if (!sprint) {
     sprintBannerActive.classList.add("hidden");
     sprintBannerInactive.classList.remove("hidden");
@@ -819,6 +856,7 @@ async function startSprint(name, durationWeeks) {
     return false;
   }
   await refreshSprintBanner();
+  await refreshNextSprintPanel();
   await loadBoard();
   return true;
 }
@@ -834,6 +872,8 @@ async function endSprint(nextName, nextDurationWeeks) {
     return false;
   }
   await refreshSprintBanner();
+  await refreshLastSprintPanel();
+  await refreshNextSprintPanel();
   await loadBoard();
   return true;
 }
@@ -852,6 +892,161 @@ function openSprintModal(mode) {
 
 function closeSprintModal() {
   sprintModalOverlay.classList.remove("open");
+}
+
+async function fetchPastSprints() {
+  const res = await fetch(`${API_BASE}/sprints`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+function createPastSprintItemElement(sprint, { showHeader = true } = {}) {
+  const el = document.createElement("div");
+  el.className = "trash-item";
+
+  if (showHeader) {
+    const header = document.createElement("div");
+    header.className = "trash-item-header";
+
+    const title = document.createElement("span");
+    title.className = "trash-item-title";
+    title.textContent = sprint.name;
+    header.appendChild(title);
+
+    const dates = document.createElement("span");
+    dates.className = "trash-item-id";
+    dates.textContent = `${formatSprintDate(sprint.start_date)} – ${formatSprintDate(sprint.end_date)}`;
+    header.appendChild(dates);
+
+    el.appendChild(header);
+  }
+
+  const tasksWrap = document.createElement("div");
+  tasksWrap.className = "past-sprint-tasks";
+  if (sprint.completed_tasks.length) {
+    for (const task of sprint.completed_tasks) {
+      const chip = document.createElement("span");
+      chip.className = "card-tag completed";
+      chip.textContent = `${task.id} ${task.title}`;
+      tasksWrap.appendChild(chip);
+    }
+  } else {
+    const empty = document.createElement("span");
+    empty.className = "past-sprint-tasks-empty";
+    empty.textContent = "No tasks completed.";
+    tasksWrap.appendChild(empty);
+  }
+  el.appendChild(tasksWrap);
+
+  return el;
+}
+
+async function renderPastSprints() {
+  const pastSprints = await fetchPastSprints();
+  // The most-recently-closed sprint already has its own dedicated "Last Sprint" panel on
+  // the board -- this modal is for everything older than that, so skip it here.
+  const olderSprints = pastSprints.slice(1);
+  pastSprintsList.replaceChildren();
+  for (const sprint of olderSprints) {
+    pastSprintsList.appendChild(createPastSprintItemElement(sprint));
+  }
+  pastSprintsEmptyMessage.classList.toggle("hidden", olderSprints.length > 0);
+}
+
+function openPastSprintsModal() {
+  pastSprintsModalOverlay.classList.add("open");
+  renderPastSprints();
+}
+
+function closePastSprintsModal() {
+  pastSprintsModalOverlay.classList.remove("open");
+}
+
+function renderLastSprintPanel(sprint) {
+  lastSprintBody.replaceChildren();
+
+  if (!sprint) {
+    const empty = document.createElement("p");
+    empty.className = "sprint-panel-empty-message";
+    empty.textContent = "No closed sprints yet.";
+    lastSprintBody.appendChild(empty);
+    lastSprintSummaryInfo.textContent = "No closed sprints yet";
+    return;
+  }
+
+  lastSprintBody.appendChild(createPastSprintItemElement(sprint, { showHeader: false }));
+
+  lastSprintSummaryInfo.replaceChildren();
+  const name = document.createElement("span");
+  name.className = "sprint-panel-summary-name";
+  name.textContent = sprint.name;
+  const dates = document.createElement("span");
+  dates.className = "sprint-panel-summary-dates";
+  dates.textContent = `${formatSprintDate(sprint.start_date)} – ${formatSprintDate(sprint.end_date)}`;
+  lastSprintSummaryInfo.append(name, dates);
+}
+
+async function refreshLastSprintPanel() {
+  // Last sprint is a size-1 read of the past-sprints list, which the API already sorts
+  // most-recently-closed first.
+  const pastSprints = await fetchPastSprints();
+  renderLastSprintPanel(pastSprints[0] || null);
+}
+
+async function fetchPlannedSprint() {
+  const res = await fetch(`${API_BASE}/sprints/planned`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
+function renderNextSprintPanel(sprint) {
+  plannedSprint = sprint;
+
+  if (sprint) {
+    nextSprintPlanned.classList.remove("hidden");
+    nextSprintEmptyMessage.classList.add("hidden");
+    planSprintForm.classList.add("hidden");
+    nextSprintName.textContent = sprint.name;
+    nextSprintDuration.textContent =
+      sprint.duration_weeks === 1 ? "1 week" : `${sprint.duration_weeks} weeks`;
+    // A planned sprint has no real start_date yet (see storage.plan_next_sprint) -- it's only
+    // computed at promotion time, from whatever day End Sprint actually gets clicked. This is
+    // just a preview based on the current sprint's end_date, not a stored commitment: if the
+    // current sprint ends earlier or later than its own end_date, the real promoted start_date
+    // will differ from this estimate accordingly.
+    nextSprintAnticipated.textContent =
+      activeSprint && activeSprint.end_date
+        ? `Starts ~${formatSprintDate(activeSprint.end_date)} (estimated)`
+        : "";
+    nextSprintSummaryInfo.textContent = sprint.name;
+    return;
+  }
+
+  nextSprintPlanned.classList.add("hidden");
+  nextSprintEmptyMessage.classList.remove("hidden");
+  nextSprintSummaryInfo.textContent = "Nothing planned yet";
+  // The plan control only makes sense while a sprint is active -- there's no "next" to queue
+  // up otherwise.
+  planSprintForm.classList.toggle("hidden", activeSprintId === null);
+}
+
+async function refreshNextSprintPanel() {
+  const sprint = await fetchPlannedSprint();
+  renderNextSprintPanel(sprint);
+}
+
+async function planNextSprint(name, durationWeeks) {
+  const res = await fetch(`${API_BASE}/sprints/plan`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, duration_weeks: durationWeeks }),
+  });
+  if (!res.ok) {
+    await handleApiError(res);
+    return false;
+  }
+  await refreshNextSprintPanel();
+  return true;
 }
 
 function applyFilters() {
@@ -1047,11 +1242,27 @@ confirmModalOverlay.addEventListener("click", (event) => {
 });
 
 startSprintBtn.addEventListener("click", () => openSprintModal("start"));
-endSprintBtn.addEventListener("click", () => openSprintModal("end"));
+endSprintBtn.addEventListener("click", async () => {
+  // If a sprint has already been explicitly planned via the "Plan Next Sprint" control, end
+  // it straight away -- the name/duration prompt is only the fallback for when nothing is
+  // queued up yet.
+  if (plannedSprint) {
+    await endSprint(null, null);
+    return;
+  }
+  openSprintModal("end");
+});
 sprintModalCancelBtn.addEventListener("click", closeSprintModal);
 
 sprintModalOverlay.addEventListener("click", (event) => {
   if (event.target === sprintModalOverlay) closeSprintModal();
+});
+
+pastSprintsFab.addEventListener("click", openPastSprintsModal);
+pastSprintsModalClose.addEventListener("click", closePastSprintsModal);
+
+pastSprintsModalOverlay.addEventListener("click", (event) => {
+  if (event.target === pastSprintsModalOverlay) closePastSprintsModal();
 });
 
 sprintForm.addEventListener("submit", async (event) => {
@@ -1066,6 +1277,18 @@ sprintForm.addEventListener("submit", async (event) => {
   if (ok) closeSprintModal();
 });
 
+planSprintForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const name = planSprintNameInput.value.trim();
+  if (!name) return;
+  const durationWeeks = parseInt(planSprintDurationSelect.value, 10);
+  const ok = await planNextSprint(name, durationWeeks);
+  if (ok) {
+    planSprintForm.reset();
+    planSprintDurationSelect.value = "2";
+  }
+});
+
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape") return;
   if (confirmModalOverlay.classList.contains("open")) closeConfirmModal();
@@ -1073,6 +1296,7 @@ document.addEventListener("keydown", (event) => {
   else if (trashModalOverlay.classList.contains("open")) closeTrashModal();
   else if (archiveModalOverlay.classList.contains("open")) closeArchiveModal();
   else if (sprintModalOverlay.classList.contains("open")) closeSprintModal();
+  else if (pastSprintsModalOverlay.classList.contains("open")) closePastSprintsModal();
   else if (modalOverlay.classList.contains("open")) closeModal();
 });
 
@@ -1155,7 +1379,10 @@ document.querySelectorAll(".task-list").forEach((list) => {
   });
 });
 
-loadBoard();
+refreshSprintBanner().then(() => {
+  refreshNextSprintPanel();
+  loadBoard();
+});
+refreshLastSprintPanel();
 refreshTrashBadge();
 if (ARCHIVE_ENABLED) refreshArchiveBadge();
-refreshSprintBanner();

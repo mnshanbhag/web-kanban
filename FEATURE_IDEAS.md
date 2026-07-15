@@ -26,7 +26,7 @@ advisory — no backend change. Shipped on `feature_wip_limits` (2026-07-09).
 
 ### JSON export (manual backup)
 A "download backup" button dumping all tasks (active + trashed) as JSON — the export half of the
-originally-proposed export/import pair (see remaining import scope under Proposed #3). New
+originally-proposed export/import pair (see remaining import scope under Proposed #2). New
 `GET /api/export` wraps the existing `get_all_boards`/`get_trash`, no new table. Shipped on
 `feature_json_export` (2026-07-13) — also served as a live test that `feature-implementer` can
 use the new `new-endpoint` skill.
@@ -58,6 +58,16 @@ create the very first sprint. Done tasks still keep their `sprint_id` pointing a
 now-closed sprint permanently, as a historical record. Shipped on `feature_scrum_sprints`
 (2026-07-13).
 
+**Revised again (2026-07-14):** the banner-only display wasn't enough to make it clear the board's
+cards belonged to the active sprint ("cards are just dangling"), so the banner and board are now
+wrapped together in a single bordered `.sprint-board-wrap` box. That redesign surfaced a real bug:
+the Done column had never been sprint-scoped — it showed every completed task ever, from every
+sprint, so cards finished in an earlier sprint appeared to be inside "this sprint's" box. Fixed by
+exposing `sprint_id` on `TaskOut` and filtering Done client-side to the active sprint's own
+completions (pre-sprint legacy Done tasks with `sprint_id == null` are still shown, since there's
+nowhere else to surface them). Shipped alongside the Past sprints view entry below, on
+`feature_past_sprints_view` (2026-07-14).
+
 ### Per-task activity log (append-only notes)
 A timestamped list of freeform notes on a task, separate from the single mutable `description`.
 New `TaskNote` table (FK `ondelete="CASCADE"`), `GET`/`POST /api/tasks/{task_id}/notes`, and UI
@@ -72,6 +82,75 @@ An `updated_at` column touched on every content-mutating storage function (`upda
 loop), surfaced on cards via the existing `formatRelativeTime` (already used for the trash panel).
 Not touched by lifecycle-only operations (delete, restore, archive, unarchive). Shipped on
 `feature_updated_at` (2026-07-13).
+
+### Past sprints view
+A way to see closed sprints after the fact. New `GET /api/sprints` returns every closed sprint
+(most-recently-closed first, ordered by `closed_at` then `id` as a tiebreaker; the currently
+active sprint — which has no `closed_at` — is excluded, since the primary use case is looking
+back at history), each annotated with a `completed_tasks` summary (id + title) of the Done tasks
+that carry its `sprint_id` — no new columns needed, since Done tasks already keep `sprint_id`
+pointing at their now-closed sprint permanently. Storage-side, `get_past_sprints()` mirrors the
+existing `get_trash()`/`get_archive()` pattern. A read-only "Past Sprints" panel (a FAB + modal
+mirroring the trash/archive panel UX) lists each closed sprint's name, date range, and completed
+tasks as chips. Shipped on `feature_past_sprints_view` (2026-07-14).
+
+### Sprint timeline view (last / current / next)
+On startup, shows three sprint panels at once — last, current, and next — instead of just a
+current-sprint banner. Last and next are collapsed `<details>` disclosures by default (native,
+no extra JS); current stays expanded and, together with the board, keeps the existing bordered
+"box" treatment (`.sprint-board-wrap`) so the board still visually reads as belonging to the
+active sprint. New `Sprint.status == "planned"` value alongside `"active"`/`"closed"` —
+`start_date`/`end_date` are now nullable, since a planned sprint has only a `name` and
+`duration_weeks` until it's promoted. A standalone "Plan Next Sprint" control (name + duration,
+no date picker) is usable any time a sprint is active; storage enforces at most one `"planned"`
+sprint at a time, mirroring the existing at-most-one-`"active"` check. `end_sprint` now checks
+for a queued planned sprint first and, if one exists, promotes it straight to active (computing
+real `start_date`/`end_date` from its stored `duration_weeks` as of the promotion moment),
+ignoring any name/duration passed in the request; otherwise it falls back to the original
+prompt-driven flow, which is why `POST /api/sprints/end`'s body fields are now optional. Two new
+endpoints: `POST /api/sprints/plan` and `GET /api/sprints/planned`. The "next" panel only ever
+shows a real sprint once one has been explicitly planned — until then it renders a "nothing
+planned yet" empty state plus the plan form (hidden entirely when no sprint is active), never a
+placeholder guess. The "last" panel is a size-1 read of the already-shipped `GET /api/sprints`
+(most-recently-closed first), reusing its existing list-item rendering.
+
+**Revised during live testing (2026-07-14):** three follow-up fixes surfaced from actually using
+the timeline:
+- The "last sprint" `<details>` summary showed the sprint's name in a muted, easy-to-miss style —
+  bumped `.sprint-panel-summary-info` to full-contrast bold text so it's legible without expanding.
+- The old "Past Sprints" panel duplicated the sprint already shown in the new "Last Sprint" panel.
+  Renamed to "Older Sprints" and `renderPastSprints()` now `.slice(1)`s the list to exclude the
+  most-recently-closed sprint (still fetched from the same unfiltered `GET /api/sprints`).
+- A closed sprint's `end_date` was never updated at close time, so ending a sprint early (or late)
+  left its stored `end_date` showing the original target instead of when it actually closed —
+  also made Sprint N+1 visually overlap Sprint N's date range. `end_sprint` now overwrites the
+  *closing* sprint's `end_date` with the real closing date every time, regardless of which path
+  (promotion or fallback) closed it.
+- Added: while a sprint is planned but not yet promoted, the "Next Sprint" panel shows a
+  computed-not-stored "Starts ~&lt;date&gt; (estimated)" hint derived from the *current* active
+  sprint's own `end_date` — purely a preview, so it self-corrects for free if the current sprint
+  ends earlier/later than expected (the real `start_date` is still only computed at promotion
+  time, unchanged from the original design).
+
+**Revised during live testing (2026-07-15):** two more follow-ups:
+- The "last sprint" `<details>` body repeated the sprint's name a second time (it's already shown
+  in the summary row) via the same `createPastSprintItemElement()` used for the many-sprint
+  "Older Sprints" list. That helper now takes a `showHeader` option; the Last Sprint panel passes
+  `showHeader: false` and instead folds the date range into the summary row next to the name
+  (new `.sprint-panel-summary-dates` style), so the body is just the completed-task chips.
+- Sprint names were never checked for uniqueness, so `start_sprint`/`plan_next_sprint`/`end_sprint`
+  could all create a sprint reusing a name already used by another sprint (active, planned, or
+  long-closed) — surfaced by two different closed sprints both named "Sprint X" showing up
+  side-by-side in "Older Sprints" with no way to tell them apart. New `_assert_sprint_name_available`
+  (mirrors the existing per-column `_assert_title_available` for tasks) rejects a collision with a
+  `FileExistsError` → `409`, checked at all three sprint-creation call sites.
+
+**Shipped on `feature_sprint_timeline_view` (2026-07-14) — based on `feature_past_sprints_view`,
+not `main`.** No separate merge needed: this branch already contains every commit from
+`feature_past_sprints_view` up through the sprint-box redesign (`45a6fd2`) where it branched off.
+The one commit `feature_past_sprints_view` has since gained on top of that (`55ca9f8`, a docs-only
+commit describing that same redesign) is superseded by this branch's own docs above — merge this
+branch straight into `main` and treat `feature_past_sprints_view` as redundant.
 
 ---
 
@@ -122,19 +201,7 @@ Free-form labels per task (e.g. "bug", "chore"), shown as chips, filterable.
 - **Tension:** tag *editing* should live in the detail modal only, matching the deliberate
   card-density decision already made for blocking (see `feedback_card_density` in memory).
 
-### 2. Past sprints view
-A way to see closed sprints after the fact — a `GET /api/sprints` list endpoint (most-recent-
-first) plus a small "past sprints" panel in the UI (name, date range, which tasks completed
-during it).
-- **Why:** the Scrum sprints feature (shipped) closes a sprint by flipping its `status` to
-  `"closed"` (rolling its incomplete tasks into the next sprint) but never exposes closed sprints
-  anywhere — the data sits inert in the `sprints` table with no way to look back at it.
-- **Scope:** small, and purely additive on top of Scrum sprints' schema — no new columns, just a
-  list endpoint (mirrors `get_trash()`/`get_archive()`'s pattern) and a read-only view. Done
-  tasks already retain their `sprint_id` after a sprint closes, so "which tasks completed in
-  Sprint N" falls out of a simple query once this exists.
-
-### 3. JSON import (manual backup, remainder)
+### 2. JSON import (manual backup, remainder)
 Import side of the export/import pair — the export half was split off and handed to
 `feature-implementer` (see In Progress) as a live test of the `new-endpoint` skill.
 - **Why:** export alone only covers backup, not restore.
@@ -143,30 +210,7 @@ Import side of the export/import pair — the export half was split off and hand
   `AUTOINCREMENT` guarantee has already retired.
 - **Tension:** don't start this until export has shipped and been used at least once.
 
-### 4. Sprint timeline view (last / current / next)
-On startup, show three sprint panels at once — last, current, and next — instead of just a
-current-sprint banner. Last and next are collapsed by default to save space; current stays
-expanded. Explicitly kept as its own later increment, not folded into the Scrum sprints feature's
-first pass (2026-07-13).
-- **Why:** Scrum sprints only ever surfaces the current sprint; #2 (Past sprints view) exposes
-  history but only via a separate panel a user has to open. This idea instead puts the immediate
-  before/after context of the current sprint on the board by default.
-- **Scope:** medium-to-large, and depends on both Scrum sprints (shipped) and #2. It also adds a
-  capability neither of those has: a **pre-planned "next" sprint** — sprints today only come into
-  existence when started, so surfacing a real "next sprint" (name + dates, not just a placeholder)
-  requires a new `"planned"` `Sprint` status creatable ahead of the current sprint ending, plus
-  whatever start-time behavior reconciles a planned sprint with the existing
-  auto-start/rollover-sweep logic.
-- **Tension:** don't build this until #2 too (the "last sprint" panel is essentially a size-1
-  version of #2's list). The "planned" status is new surface area on top of the existing `status`
-  column (`"active"`/`"closed"` today) — needs its own design pass on how a planned sprint
-  transitions to active and what happens if the current sprint is ended early or extended
-  relative to a planned sprint's start date.
-- **Status:** idea only, not scoped in detail yet, not handed to `feature-implementer`.
-
----
-
-### 5. PostgreSQL support (for Vercel deployment)
+### 3. PostgreSQL support (for Vercel deployment)
 Make the storage layer able to run against Postgres instead of (or alongside) SQLite, so the app
 can be deployed to Vercel — Vercel's serverless functions have an ephemeral/read-only-ish
 filesystem, so the current `.kanban_data/kanban.db` file won't reliably persist writes across
@@ -197,7 +241,7 @@ requests once deployed there.
     (`backend/tests/test_tasks_api.py`) — if dual support is kept, tests can keep doing exactly
     this against SQLite; only a manual/CI smoke test would exercise the Postgres path.
   - Moving *existing* local data into a new Postgres instance isn't really "migration" so much as
-    export/import — ties into the JSON export (shipped) and JSON import (#3, not yet built) ideas.
+    export/import — ties into the JSON export (shipped) and JSON import (#2, not yet built) ideas.
 - **Status:** idea only, not scoped down or handed to `feature-implementer` yet — open questions
   above (dual support vs. Postgres-only, Alembic vs. not) need a decision first.
 
