@@ -775,11 +775,39 @@ async def test_archiving_a_trashed_task_is_rejected(client):
         await client.post("/api/tasks", json={"column": "To Do", "title": "Trashed"})
     ).json()["id"]
     await client.put(f"/api/tasks/{kan_1}/move", json={"to_column": "Done"})
+    await client.put(f"/api/tasks/{kan_1}/move", json={"to_column": "In Review"})
     await client.delete(f"/api/tasks/{kan_1}")
 
     response = await client.post(f"/api/tasks/{kan_1}/archive")
 
     assert response.status_code == 404
+
+
+async def test_deleting_a_done_task_is_rejected(client):
+    kan_1 = (
+        await client.post("/api/tasks", json={"column": "To Do", "title": "Finished"})
+    ).json()["id"]
+    await client.put(f"/api/tasks/{kan_1}/move", json={"to_column": "Done"})
+
+    response = await client.delete(f"/api/tasks/{kan_1}")
+
+    assert response.status_code == 400
+    with storage._session() as session:
+        row = session.get(storage.Task, 1)
+        assert row is not None
+        assert row.deleted_at is None
+
+
+async def test_deleting_a_task_moved_out_of_done_succeeds(client):
+    kan_1 = (
+        await client.post("/api/tasks", json={"column": "To Do", "title": "Reopened"})
+    ).json()["id"]
+    await client.put(f"/api/tasks/{kan_1}/move", json={"to_column": "Done"})
+    await client.put(f"/api/tasks/{kan_1}/move", json={"to_column": "In Review"})
+
+    response = await client.delete(f"/api/tasks/{kan_1}")
+
+    assert response.status_code == 204
 
 
 async def test_deleting_an_archived_task_is_rejected(client):
@@ -896,7 +924,6 @@ async def test_archive_all_done_skips_already_archived_and_trashed_tasks(client)
         await client.post("/api/tasks", json={"column": "To Do", "title": "Trashed"})
     ).json()["id"]
     await client.put(f"/api/tasks/{kan_1}/move", json={"to_column": "Done"})
-    await client.put(f"/api/tasks/{kan_2}/move", json={"to_column": "Done"})
     await client.post(f"/api/tasks/{kan_1}/archive")
     await client.delete(f"/api/tasks/{kan_2}")
 

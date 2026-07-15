@@ -66,7 +66,10 @@ key for what's proposed/in-progress/shipped/shelved.
   app needed (that field existed only because deleting used to *move a file*, which no longer
   happens). `get_all_boards`/`get_trash` filter on `deleted_at IS NULL` / `IS NOT NULL`
   respectively. `permanent_delete_task`/`empty_trash` are the only functions that actually
-  `session.delete(...)` a row.
+  `session.delete(...)` a row. `delete_task` rejects (`ValueError` → `400`) deleting a task whose
+  `column == DONE_COLUMN` — a finished task shouldn't quietly vanish; move it out of Done first.
+  The frontend enforces the same thing by not rendering the card's delete button at all for Done
+  cards (see below), but the server-side check is the real guard.
 - **SQLite datetime gotcha**: SQLAlchemy's `DateTime` column silently drops tzinfo on
   SQLite round-trips (a value written as `datetime.now(timezone.utc)` comes back naive). Every
   value this app ever writes to `deleted_at` *is* UTC, so `storage._utc_isoformat()` re-attaches
@@ -173,7 +176,9 @@ key for what's proposed/in-progress/shipped/shelved.
   `[data-priority="..."]` attribute selectors on both the pill and the card's left border. It has
   `draggable = false` and stops `mousedown`/`click` propagation so interacting with it doesn't
   fight the card's own HTML5 drag-and-drop. The delete button on each card calls the delete
-  endpoint (soft delete). A recycle-bin icon fixed at the bottom-right (`.trash-fab`,
+  endpoint (soft delete); it isn't rendered at all for cards in Done (matching `delete_task`'s
+  server-side rejection above) — drag a Done card to another column first if it needs deleting.
+  A recycle-bin icon fixed at the bottom-right (`.trash-fab`,
   with an unread-count badge) opens a panel listing trashed tasks with Restore / Delete
   Permanently actions, plus an Empty Trash button. Errors from the API surface via a toast
   (`showError`) — **never use `alert()`/`confirm()` here**: they block the JS thread, and in at
@@ -185,11 +190,11 @@ key for what's proposed/in-progress/shipped/shelved.
 ## Running things
 
 ```
-python -m uvicorn backend.main:app --reload
+uv run uvicorn backend.main:app --reload
 ```
 (also the "backend" config in `.claude/launch.json`, usable via the preview tool).
 
-Tests: `python -m pytest` (needs `requirements-dev.txt` installed — adds pytest,
+Tests: `uv run pytest` (needs `requirements-dev.txt` installed — adds pytest,
 pytest-asyncio, httpx on top of `requirements.txt`, which itself now includes SQLAlchemy).
 `pytest.ini` sets `asyncio_mode = auto` so async tests don't need `@pytest.mark.asyncio`.
 

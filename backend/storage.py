@@ -361,9 +361,16 @@ def move_task(task_id: str, to_column: str) -> None:
 
 
 def delete_task(task_id: str) -> None:
-    """Soft delete: mark the row as trashed without removing it."""
+    """Soft delete: mark the row as trashed without removing it.
+
+    Done tasks can't be deleted directly — move it to another column first.
+    This mirrors the "finishing something is a real state" philosophy behind
+    the Done-cascade in move_task: a completed task shouldn't quietly vanish.
+    """
     with _session() as session:
         task = _get_active_task(session, task_id)
+        if task.column == DONE_COLUMN:
+            raise ValueError("A Done task cannot be deleted; move it to another column first")
         task.deleted_at = datetime.now(timezone.utc)
         session.commit()
 

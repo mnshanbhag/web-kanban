@@ -326,15 +326,17 @@ function createCardElement(column, task) {
     card.appendChild(archiveBtn);
   }
 
-  const deleteBtn = document.createElement("button");
-  deleteBtn.className = "card-delete";
-  deleteBtn.textContent = "×";
-  deleteBtn.title = "Delete task";
-  deleteBtn.addEventListener("click", (event) => {
-    event.stopPropagation();
-    deleteTask(task.id);
-  });
-  card.appendChild(deleteBtn);
+  if (column !== DONE_COLUMN) {
+    const deleteBtn = document.createElement("button");
+    deleteBtn.className = "card-delete";
+    deleteBtn.textContent = "×";
+    deleteBtn.title = "Delete task";
+    deleteBtn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      deleteTask(task.id);
+    });
+    card.appendChild(deleteBtn);
+  }
 
   card.addEventListener("click", () => openTaskDetail(column, task));
 
@@ -426,7 +428,13 @@ async function setDueDate(taskId, dueDate) {
 }
 
 async function deleteTask(taskId) {
-  await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}`, { method: "DELETE" });
+  const res = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    await handleApiError(res);
+    return;
+  }
   await loadBoard();
   await refreshTrashBadge();
 }

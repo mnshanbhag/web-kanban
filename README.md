@@ -11,19 +11,19 @@ features.
 Requires Python 3.13+.
 
 ```
-python -m pip install -r requirements.txt
+uv pip install -r requirements.txt
 ```
 
 For running tests, install dev dependencies instead (this also installs `requirements.txt`):
 
 ```
-python -m pip install -r requirements-dev.txt
+uv pip install -r requirements-dev.txt
 ```
 
 ## Running the app
 
 ```
-python -m uvicorn backend.main:app --reload
+uv run uvicorn backend.main:app --reload
 ```
 
 Open http://127.0.0.1:8000 — the backend serves both the API and the static frontend.
@@ -31,7 +31,7 @@ Open http://127.0.0.1:8000 — the backend serves both the API and the static fr
 ## Running tests
 
 ```
-python -m pytest
+uv run pytest
 ```
 
 ## Seeding sample data
@@ -42,7 +42,7 @@ with a deliberately backdated `updated_at`) — useful for demoing or manually t
 against a non-empty board. Start the dev server first, then run:
 
 ```
-python -m scripts.seed_sample_data
+uv run -m scripts.seed_sample_data
 ```
 
 It talks to the running API for everything except backdating `updated_at`, which has no API
