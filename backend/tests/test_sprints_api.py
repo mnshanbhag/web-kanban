@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 import httpx
 import pytest
@@ -356,7 +356,13 @@ async def test_get_past_sprints_excludes_trashed_completed_tasks(client):
         await client.post("/api/tasks", json={"column": "To Do", "title": "Completed task"})
     ).json()["id"]
     await client.put(f"/api/tasks/{done_id}/move", json={"to_column": "Done"})
-    await client.delete(f"/api/tasks/{done_id}")
+
+    # A Done task can no longer be trashed via the API (delete_task rejects it), so this
+    # defensive filter in get_past_sprints is now only reachable by trashing the row directly.
+    with storage._session() as session:
+        row = session.get(storage.Task, storage._parse_id(done_id))
+        row.deleted_at = datetime.now(timezone.utc)
+        session.commit()
 
     await client.post("/api/sprints/end", json={"name": "Sprint 2", "duration_weeks": 1})
 
