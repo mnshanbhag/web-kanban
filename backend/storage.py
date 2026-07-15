@@ -638,6 +638,15 @@ def _sprint_to_dict(sprint: Sprint) -> dict:
     }
 
 
+def _assert_sprint_name_available(session: Session, name: str) -> None:
+    """Sprint names are never reused, even across closed sprints -- unlike task titles (unique
+    only within a column), a sprint's name has no scoping concept to make a collision safe, and
+    the Last/Older Sprints panels render by name, so two same-named sprints would be
+    indistinguishable there."""
+    if session.query(Sprint).filter(Sprint.name == name).first() is not None:
+        raise FileExistsError(f"A sprint named '{name}' already exists")
+
+
 def get_active_sprint() -> Optional[dict]:
     with _session() as session:
         sprint = (
@@ -665,6 +674,7 @@ def start_sprint(name: str, duration_weeks: int) -> dict:
         )
         if existing is not None:
             raise ValueError("A sprint is already active")
+        _assert_sprint_name_available(session, name)
 
         start = date.today()
         end = start + timedelta(weeks=duration_weeks)
@@ -724,6 +734,7 @@ def plan_next_sprint(name: str, duration_weeks: int) -> dict:
         )
         if existing is not None:
             raise ValueError("A sprint is already planned")
+        _assert_sprint_name_available(session, name)
 
         sprint = Sprint(
             name=name,
@@ -793,6 +804,7 @@ def end_sprint(next_name: Optional[str] = None, next_duration_weeks: Optional[in
                     "sprint"
                 )
             next_duration_weeks = _validate_sprint_duration(next_duration_weeks)
+            _assert_sprint_name_available(session, next_name)
             end = start + timedelta(weeks=next_duration_weeks)
             new_sprint = Sprint(
                 name=next_name, start_date=start, end_date=end, status=SPRINT_STATUS_ACTIVE

@@ -418,6 +418,15 @@ body {
   font-weight: 700;
   font-size: 0.85rem;
   text-align: right;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.sprint-panel-summary-dates {
+  font-weight: 500;
+  font-size: 0.8rem;
+  color: var(--text-muted);
 }
 
 .sprint-panel-body {

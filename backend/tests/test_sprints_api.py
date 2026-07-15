@@ -206,6 +206,49 @@ async def test_start_sprint_with_empty_name_is_rejected(client):
     assert response.status_code == 400
 
 
+async def test_start_sprint_rejects_a_name_already_used_by_a_previous_sprint(client):
+    """end_sprint never leaves the board without an active sprint, so start_sprint can't
+    normally be reached again after the first-ever call -- exercise its own name check
+    directly at the storage layer regardless, as a defensive backstop."""
+    await client.post("/api/sprints/start", json={"name": "Sprint X", "duration_weeks": 1})
+    with storage._session() as session:
+        active = (
+            session.query(storage.Sprint)
+            .filter(storage.Sprint.status == storage.SPRINT_STATUS_ACTIVE)
+            .first()
+        )
+        active.status = storage.SPRINT_STATUS_CLOSED
+        session.commit()
+
+    with pytest.raises(FileExistsError):
+        storage.start_sprint("Sprint X", 1)
+
+
+async def test_plan_next_sprint_rejects_a_name_already_used_by_a_closed_sprint(client):
+    await client.post("/api/sprints/start", json={"name": "Sprint X", "duration_weeks": 1})
+    await client.post("/api/sprints/end", json={"name": "Sprint Y", "duration_weeks": 1})
+
+    response = await client.post(
+        "/api/sprints/plan", json={"name": "Sprint X", "duration_weeks": 1}
+    )
+
+    assert response.status_code == 409
+    assert (await client.get("/api/sprints/planned")).json() is None
+
+
+async def test_end_sprint_rejects_a_next_name_already_used_by_a_closed_sprint(client):
+    await client.post("/api/sprints/start", json={"name": "Sprint X", "duration_weeks": 1})
+    await client.post("/api/sprints/end", json={"name": "Sprint Y", "duration_weeks": 1})
+
+    response = await client.post(
+        "/api/sprints/end", json={"name": "Sprint X", "duration_weeks": 1}
+    )
+
+    assert response.status_code == 409
+    active = (await client.get("/api/sprints/active")).json()
+    assert active["name"] == "Sprint Y"
+
+
 async def test_ending_a_sprint_also_sweeps_up_any_untagged_non_done_task(client):
     """A task created before the very first sprint ever started has no sprint_id; ending the
     first sprint should still pick it up into the next one, same as start_sprint's sweep."""

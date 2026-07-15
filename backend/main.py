@@ -257,6 +257,8 @@ def export_data():
 def start_sprint(body: SprintStart):
     try:
         return storage.start_sprint(body.name, body.duration_weeks)
+    except FileExistsError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -265,6 +267,8 @@ def start_sprint(body: SprintStart):
 def end_sprint(body: SprintEnd):
     try:
         return storage.end_sprint(body.name, body.duration_weeks)
+    except FileExistsError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -278,6 +282,8 @@ def get_active_sprint():
 def plan_next_sprint(body: SprintPlan):
     try:
         return storage.plan_next_sprint(body.name, body.duration_weeks)
+    except FileExistsError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

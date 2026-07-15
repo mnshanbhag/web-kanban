@@ -132,6 +132,19 @@ the timeline:
   ends earlier/later than expected (the real `start_date` is still only computed at promotion
   time, unchanged from the original design).
 
+**Revised during live testing (2026-07-15):** two more follow-ups:
+- The "last sprint" `<details>` body repeated the sprint's name a second time (it's already shown
+  in the summary row) via the same `createPastSprintItemElement()` used for the many-sprint
+  "Older Sprints" list. That helper now takes a `showHeader` option; the Last Sprint panel passes
+  `showHeader: false` and instead folds the date range into the summary row next to the name
+  (new `.sprint-panel-summary-dates` style), so the body is just the completed-task chips.
+- Sprint names were never checked for uniqueness, so `start_sprint`/`plan_next_sprint`/`end_sprint`
+  could all create a sprint reusing a name already used by another sprint (active, planned, or
+  long-closed) — surfaced by two different closed sprints both named "Sprint X" showing up
+  side-by-side in "Older Sprints" with no way to tell them apart. New `_assert_sprint_name_available`
+  (mirrors the existing per-column `_assert_title_available` for tasks) rejects a collision with a
+  `FileExistsError` → `409`, checked at all three sprint-creation call sites.
+
 **Shipped on `feature_sprint_timeline_view` (2026-07-14) — based on `feature_past_sprints_view`,
 not `main`.** `feature_past_sprints_view` is not yet merged to `main`; land it first (or
 squash/rebase this branch onto `main` appropriately) before merging this one.

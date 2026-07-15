@@ -900,24 +900,26 @@ async function fetchPastSprints() {
   return res.json();
 }
 
-function createPastSprintItemElement(sprint) {
+function createPastSprintItemElement(sprint, { showHeader = true } = {}) {
   const el = document.createElement("div");
   el.className = "trash-item";
 
-  const header = document.createElement("div");
-  header.className = "trash-item-header";
+  if (showHeader) {
+    const header = document.createElement("div");
+    header.className = "trash-item-header";
 
-  const title = document.createElement("span");
-  title.className = "trash-item-title";
-  title.textContent = sprint.name;
-  header.appendChild(title);
+    const title = document.createElement("span");
+    title.className = "trash-item-title";
+    title.textContent = sprint.name;
+    header.appendChild(title);
 
-  const dates = document.createElement("span");
-  dates.className = "trash-item-id";
-  dates.textContent = `${formatSprintDate(sprint.start_date)} – ${formatSprintDate(sprint.end_date)}`;
-  header.appendChild(dates);
+    const dates = document.createElement("span");
+    dates.className = "trash-item-id";
+    dates.textContent = `${formatSprintDate(sprint.start_date)} – ${formatSprintDate(sprint.end_date)}`;
+    header.appendChild(dates);
 
-  el.appendChild(header);
+    el.appendChild(header);
+  }
 
   const tasksWrap = document.createElement("div");
   tasksWrap.className = "past-sprint-tasks";
@@ -972,8 +974,16 @@ function renderLastSprintPanel(sprint) {
     return;
   }
 
-  lastSprintBody.appendChild(createPastSprintItemElement(sprint));
-  lastSprintSummaryInfo.textContent = sprint.name;
+  lastSprintBody.appendChild(createPastSprintItemElement(sprint, { showHeader: false }));
+
+  lastSprintSummaryInfo.replaceChildren();
+  const name = document.createElement("span");
+  name.className = "sprint-panel-summary-name";
+  name.textContent = sprint.name;
+  const dates = document.createElement("span");
+  dates.className = "sprint-panel-summary-dates";
+  dates.textContent = `${formatSprintDate(sprint.start_date)} – ${formatSprintDate(sprint.end_date)}`;
+  lastSprintSummaryInfo.append(name, dates);
 }
 
 async function refreshLastSprintPanel() {

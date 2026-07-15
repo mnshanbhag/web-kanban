@@ -89,7 +89,15 @@ key for what's proposed/in-progress/shipped/shelved.
   checking this flag first; don't build new features against the assumption that Archive is
   reachable from the UI.
 - Scrum sprints: only one `Sprint` can have `status == "active"` at a time — `start_sprint`
-  raises if one already exists. `end_sprint` never leaves the board without an active sprint: it
+  raises if one already exists. Sprint names are also globally unique across every sprint
+  regardless of status (active, planned, or long-closed) — `storage._assert_sprint_name_available`
+  (mirrors the per-column `_assert_title_available` used for task titles) is checked in
+  `start_sprint`, `plan_next_sprint`, and `end_sprint`'s fallback (prompt-driven) branch, raising
+  `FileExistsError` → `409`. This matters because the Last/Older Sprints panels render by name —
+  two same-named closed sprints would otherwise be indistinguishable there. `end_sprint`'s
+  promotion branch doesn't re-check: a planned sprint's name was already validated once at
+  `plan_next_sprint` time and sprint records are never renamed afterward, so it can't have gone
+  stale by promotion time. `end_sprint` never leaves the board without an active sprint: it
   atomically closes the current sprint and creates+activates the next one in the same call (or
   promotes an already-`"planned"` sprint if one is queued — see below), rolling every non-Done
   task from the closed sprint into the new one (plus sweeping up any still-untagged non-Done
@@ -121,6 +129,12 @@ key for what's proposed/in-progress/shipped/shelved.
   names still saying `past-sprints-*` internally) — `renderPastSprints()` explicitly
   `.slice(1)`s the list to exclude the last sprint, since that one already has its own panel and
   showing it twice would be redundant. Don't render the full unsliced list in that modal again.
+  Both panels share `createPastSprintItemElement()` to render a sprint's date range + completed-
+  task chips, but it takes a `showHeader` option (default `true`): the Older Sprints *list* needs
+  each item's own name/date header since it shows several sprints at once, but the Last Sprint
+  *panel* already shows the name and date range in its own summary row (`renderLastSprintPanel()`
+  builds that row itself, name + dates as separate spans) — call it with `showHeader: false` there
+  so the name isn't rendered a second time in the body.
 - Sprint timeline (last / current / next): alongside `"active"`/`"closed"`, a `Sprint.status` can
   be `"planned"` — a queued-up next sprint with only a `name`/`duration_weeks`, no `start_date`/
   `end_date` yet (both nullable; only computed at promotion time, so there's no fixed planned
