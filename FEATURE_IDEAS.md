@@ -146,8 +146,11 @@ the timeline:
   `FileExistsError` → `409`, checked at all three sprint-creation call sites.
 
 **Shipped on `feature_sprint_timeline_view` (2026-07-14) — based on `feature_past_sprints_view`,
-not `main`.** `feature_past_sprints_view` is not yet merged to `main`; land it first (or
-squash/rebase this branch onto `main` appropriately) before merging this one.
+not `main`.** No separate merge needed: this branch already contains every commit from
+`feature_past_sprints_view` up through the sprint-box redesign (`45a6fd2`) where it branched off.
+The one commit `feature_past_sprints_view` has since gained on top of that (`55ca9f8`, a docs-only
+commit describing that same redesign) is superseded by this branch's own docs above — merge this
+branch straight into `main` and treat `feature_past_sprints_view` as redundant.
 
 ---
 
