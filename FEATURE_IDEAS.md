@@ -152,42 +152,21 @@ The one commit `feature_past_sprints_view` has since gained on top of that (`55c
 commit describing that same redesign) is superseded by this branch's own docs above — merge this
 branch straight into `main` and treat `feature_past_sprints_view` as redundant.
 
+### Subtask checklists
+A small ordered checklist of items within a task (e.g. "Write tests", "Update docs"), shown as a
+`3/5` progress badge on the card and edited in the detail modal. New `TaskSubtask` table (FK
+`ondelete="CASCADE"` on `Task.id`, plus an ordering column), CRUD endpoints, and detail-modal UI;
+`TaskOut` exposes `subtask_total`/`subtask_done` for the card's count badge — the card itself
+carries no other subtask UI, keeping the existing card-density decision intact (see
+`feedback_card_density` in memory). Completion is purely manual/advisory, same spirit as WIP
+limits — not wired into the Done-column invariants or blocking logic. Shipped on
+`feature_subtask_checklists` (2026-07-13).
+
 ---
 
 ## 🚧 In Progress
 
-### Subtask checklists
-A small ordered checklist of items within a task (e.g. "Write tests", "Update docs"), shown as a
-`3/5` progress badge on the card and edited in the detail modal.
-- **Why:** priority/blocking/due-dates all operate at the whole-task level; there's no way to
-  break a task into steps without splintering it into multiple cards.
-- **Scope:** medium — a new `TaskSubtask` table (FK `ondelete="CASCADE"` on `Task.id`, plus an
-  ordering column), a couple of endpoints, and detail-modal UI; the card itself only needs the
-  count badge, keeping the existing card-density decision intact (see `feedback_card_density` in
-  memory).
-- **Tension:** subtask completion should be purely manual/advisory (same spirit as WIP limits) —
-  don't wire it into the Done-column invariants or blocking logic, to avoid new edge cases.
-- Handed to `feature-implementer` (2026-07-13).
-
-### Archive Done tasks separately from trash
-A manual "Archive" action on Done cards (alongside the existing delete button), hiding the task
-from the board without touching the trash/soft-delete path. An archive panel — mirroring the
-existing trash panel's UX — lists archived tasks with an "Unarchive" action.
-- **Why:** long-lived boards accumulate Done clutter that isn't "deleted," just old; manual
-  archiving (chosen over an automatic age-based sweep) keeps behavior predictable for a
-  single-user local tool and reuses most of the existing trash-panel plumbing.
-- **Scope:** medium — a third state (`archived_at`) alongside active/trashed, an archive panel
-  UI component closely mirroring the trash panel, one new endpoint pair
-  (archive/unarchive) plus a list endpoint.
-- **Tension:** must not get confused with the existing `deleted_at IS NULL` filtering or the
-  `blocks` backref computation — read `storage.py`'s trash/soft-delete section carefully before
-  implementing, since archived and trashed are two independent, non-overlapping states (a task
-  can't be both). Only Done tasks should be archivable — enforce it server-side, not just by
-  hiding the button.
-- Handed to `feature-implementer` (2026-07-13).
-- **Disabled (2026-07-13):** UI entry points hidden pending a redesign — see
-  `ARCHIVE_ENABLED` in `frontend/app.js`. Backend endpoints and existing archived data are
-  untouched; re-enabling is a one-line flip once the redesign lands.
+_Nothing currently in progress._
 
 ---
 
@@ -248,6 +227,19 @@ requests once deployed there.
 ---
 
 ## ❌ Shelved
+
+### Archive Done tasks separately from trash
+A manual "Archive" action on Done cards (alongside the existing delete button), hiding the task
+from the board without touching the trash/soft-delete path. Fully implemented: a third
+independent state (`archived_at`) alongside active/trashed — a task can't be both — an archive
+panel mirroring the trash panel's UX (Unarchive action), archive/unarchive endpoints, and a bulk
+"archive all Done" endpoint, all on `feature_archive_done_tasks` (2026-07-13). Only Done tasks
+are archivable, enforced server-side.
+- **Why shelved:** the UI entry points (Archive FAB, archive modal, per-card archive button,
+  Archive All button) were disabled behind `ARCHIVE_ENABLED = false` in `frontend/app.js` pending
+  a redesign, and the redesign never happened — backend and existing archived data are untouched,
+  so re-enabling is still a one-line flip if this gets picked back up.
+- **Shelved:** 2026-07-17.
 
 ### Manual card ordering within a column
 Let a card be dragged to a specific position within a column, not just between columns —
