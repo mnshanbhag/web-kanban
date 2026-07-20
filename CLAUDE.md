@@ -186,6 +186,34 @@ key for what's proposed/in-progress/shipped/shelved.
   couldn't dispatch further events until the dialog was dismissed). Destructive trash actions
   (permanent delete, empty trash) use a custom in-page confirm modal (`confirmAction()` /
   `#confirm-modal-overlay`) instead of native `confirm()`, for the same reason.
+- JSON export/import (manual backup/restore): `GET /api/export` returns `{"tasks": {...},
+  "sprints": [...]}` — every active task (not trashed, not archived) grouped by column, each
+  carrying its real `TaskSubtask`/`TaskNote` rows (`ExportTaskOut(TaskOut)` adds `subtasks`/
+  `notes`, built per-task via `storage.get_subtasks()`/`get_notes()` rather than widening the base
+  `TaskOut` every board fetch uses), plus every `Sprint` row regardless of status
+  (`storage.get_all_sprints()`). Trashed and archived tasks are deliberately excluded — the former
+  because trash isn't meant to round-trip, the latter because Archive is still shelved (see
+  `ARCHIVE_ENABLED` above). `POST /api/import` accepts that same shape back (reuses `ExportOut` as
+  the request model) and calls `storage.import_data()`, which is **additive** — it adds to
+  whatever's already in the DB, there's no wipe-and-replace mode. Every id in the file (sprint
+  ids, `"KAN-NN"` task ids) is local to that file and gets remapped to a freshly-minted id rather
+  than reused, same reasoning as the "IDs are never reused" invariant above. Sprints import first
+  (tasks reference them by id), enforcing the same at-most-one-active/at-most-one-planned and
+  name-uniqueness invariants `start_sprint`/`plan_next_sprint` already enforce live — checked
+  against the combination of the file *and* the live DB, not just within the file. Tasks import in
+  two passes because a `blocked_by` reference can point at a task appearing later in the file:
+  pass one creates every task directly (not via `add_task`, which would auto-join whatever sprint
+  happens to be active in the *target* DB right now instead of the task's real remapped
+  `sprint_id`), pass two wires up `blocked_by_id` through the id map from pass one, rejecting a
+  reference to a task outside the import set or already Done. The whole import runs inside one
+  `_session()` and commits once at the end, mirroring `end_sprint`'s atomic multi-step pattern — a
+  failure partway through (a title collision, an unresolvable blocker, ...) leaves nothing
+  persisted. `Task.updated_at`, `TaskNote.created_at`, and `Sprint.closed_at` are preserved from
+  the file rather than reset to "now": import is a restore of prior state, not new activity.
+  Frontend: an "Import Backup" FAB (`#import-fab`) next to the existing "Download Backup" one
+  triggers a hidden file input; the parsed JSON is only POSTed after the user confirms via
+  `confirmAction()`, then `loadBoard()`/the sprint panels refresh — same error-toast/no-native-
+  dialogs conventions as the trash panel above.
 
 ## Running things
 

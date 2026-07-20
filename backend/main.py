@@ -15,6 +15,7 @@ from backend.schemas import (
     EmptyTrashResponse,
     ExportOut,
     IdResponse,
+    ImportResult,
     NoteCreate,
     NoteOut,
     PastSprintOut,
@@ -265,6 +266,16 @@ def export_data():
         for column, column_tasks in boards.items()
     }
     return {"tasks": tasks, "sprints": storage.get_all_sprints()}
+
+
+@app.post("/api/import", response_model=ImportResult)
+def import_data(body: ExportOut):
+    try:
+        return storage.import_data(body.model_dump())
+    except FileExistsError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post("/api/sprints/start", response_model=SprintOut)

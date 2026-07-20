@@ -46,7 +46,41 @@ database, so a new `storage.get_all_sprints()` (the first storage function retur
 regardless of status — `get_active_sprint`/`get_planned_sprint`/`get_past_sprints()` each return
 only one status) is exposed as `ExportOut.sprints`. Archive stays excluded, unchanged (still
 shelved behind `ARCHIVE_ENABLED = false`, see Shelved section). Revised on `feature_json_import`
-(2026-07-20), ahead of building JSON import (Proposed #2) against this corrected shape.
+(2026-07-20), ahead of building JSON import (below) against this corrected shape.
+
+### JSON import (manual backup, restore)
+Import side of the export/import pair — a "Import Backup" button (next to the existing "Download
+Backup" one) uploads a previously-exported JSON file and restores it into the live board. New
+`POST /api/import`, request body is the same `ExportOut` shape `GET /api/export` produces (reused
+directly, no separate schema to keep in sync); `storage.import_data()` does the actual work in one
+`_session()` block, mirroring `end_sprint`'s pattern of atomic multi-step work — nothing is
+committed until every row validates, so a partial failure (a title collision partway through, say)
+leaves nothing persisted. Import is additive (adds to whatever's already in the DB), not a
+wipe-and-replace — this app has no "reset the board" operation and doesn't gain one here.
+
+Every id in the file (sprint ids, `"KAN-NN"` task ids) is local to that file and gets remapped to
+a freshly-minted id rather than reused, same reasoning as the "IDs are never reused" invariant
+elsewhere in this app: reusing an id risks colliding with or resurrecting one `AUTOINCREMENT` has
+already retired. Sprints import first (tasks reference them by id), enforcing the same
+at-most-one-active/at-most-one-planned invariants `start_sprint`/`plan_next_sprint` already
+enforce live — checked across the combination of the file and the live DB, not just within the
+file — plus the existing sprint-name-uniqueness check (`_assert_sprint_name_available`). Tasks
+import in two passes since a `blocked_by` reference can point at a task appearing later in the
+file: pass one creates every task (skipping `add_task`, which would've auto-joined whatever sprint
+happens to be active in the *target* DB right now instead of the task's real remapped
+`sprint_id`), pass two wires up `blocked_by_id` through the id map built in pass one, rejecting
+(400) a reference to a task not present in the import set or already Done, mirroring
+`_validate_blocker`'s live rules. The file's `blocks` field is ignored entirely on import, same as
+everywhere else in this app — it's a computed backref, never accepted as input. Subtasks/notes
+attach to each task's newly-minted id, copying `title`/`done`/`position` and `body`/`created_at`
+respectively.
+
+Timestamps (`Task.updated_at`, `TaskNote.created_at`, `Sprint.closed_at`) are preserved from the
+file rather than reset to "now" — import is a restore of prior state, not new activity, so cards
+should show their real history ("updated 3 days ago"), not look freshly touched by the import
+itself. Trashed and archived tasks were never in the export (see the Revised paragraph above), so
+there's nothing to import for either. Shipped on `feature_json_import` (2026-07-20), same branch
+as the export fix above (no separate merge needed).
 
 ### Scrum sprints
 A lightweight, optional time-boxing layer over the existing continuous board: start a named
@@ -197,20 +231,7 @@ Free-form labels per task (e.g. "bug", "chore"), shown as chips, filterable.
 - **Tension:** tag *editing* should live in the detail modal only, matching the deliberate
   card-density decision already made for blocking (see `feedback_card_density` in memory).
 
-### 2. JSON import (manual backup, remainder)
-Import side of the export/import pair — the export half was split off and handed to
-`feature-implementer` (see In Progress) as a live test of the `new-endpoint` skill.
-- **Why:** export alone only covers backup, not restore.
-- **Scope:** the harder half — must mint *new* IDs and remap `blocked_by` references rather than
-  reusing exported IDs, since reusing them risks colliding with or resurrecting IDs the
-  `AUTOINCREMENT` guarantee has already retired. Also needs to remap `sprint_id` (now that sprints
-  are part of the export, see the Revised paragraph on the Shipped "JSON export" entry above) and
-  attach subtasks/notes to newly-minted task IDs.
-- **Tension:** don't start this until export has shipped and been used at least once.
-- The export's shape was corrected on `feature_json_import` (2026-07-20) — trash dropped,
-  real subtasks/notes added, sprints added — build import against that corrected shape.
-
-### 3. PostgreSQL support (for Vercel deployment)
+### 2. PostgreSQL support (for Vercel deployment)
 Make the storage layer able to run against Postgres instead of (or alongside) SQLite, so the app
 can be deployed to Vercel — Vercel's serverless functions have an ephemeral/read-only-ish
 filesystem, so the current `.kanban_data/kanban.db` file won't reliably persist writes across
@@ -241,7 +262,7 @@ requests once deployed there.
     (`backend/tests/test_tasks_api.py`) — if dual support is kept, tests can keep doing exactly
     this against SQLite; only a manual/CI smoke test would exercise the Postgres path.
   - Moving *existing* local data into a new Postgres instance isn't really "migration" so much as
-    export/import — ties into the JSON export (shipped) and JSON import (#2, not yet built) ideas.
+    export/import — ties into the JSON export/import features (both shipped).
 - **Status:** idea only, not scoped down or handed to `feature-implementer` yet — open questions
   above (dual support vs. Postgres-only, Alembic vs. not) need a decision first.
 

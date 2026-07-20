@@ -154,6 +154,11 @@ class ExportOut(BaseModel):
     sprints: list[SprintOut] = []
 
 
+class ImportResult(BaseModel):
+    sprints_imported: int
+    tasks_imported: int
+
+
 class SprintCompletedTaskOut(BaseModel):
     id: str
     title: str
