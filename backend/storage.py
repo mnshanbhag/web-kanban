@@ -654,6 +654,16 @@ def _assert_sprint_name_available(session: Session, name: str) -> None:
         raise FileExistsError(f"A sprint named '{name}' already exists")
 
 
+def get_all_sprints() -> list[dict]:
+    """Every sprint row regardless of status (active + planned + closed), for export -- unlike
+    get_active_sprint/get_planned_sprint/get_past_sprints, which each return only one status
+    subset. Ordered by id since there's no single recency field spanning all three statuses
+    (planned sprints have no start_date/closed_at yet)."""
+    with _session() as session:
+        sprints = session.query(Sprint).order_by(Sprint.id).all()
+        return [_sprint_to_dict(s) for s in sprints]
+
+
 def get_active_sprint() -> Optional[dict]:
     with _session() as session:
         sprint = (

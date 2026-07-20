@@ -252,7 +252,19 @@ def unarchive_task(task_id: str):
 
 @app.get("/api/export", response_model=ExportOut)
 def export_data():
-    return {"tasks": storage.get_all_boards(), "trash": storage.get_trash()}
+    boards = storage.get_all_boards()
+    tasks = {
+        column: [
+            {
+                **task,
+                "subtasks": storage.get_subtasks(task["id"]),
+                "notes": storage.get_notes(task["id"]),
+            }
+            for task in column_tasks
+        ]
+        for column, column_tasks in boards.items()
+    }
+    return {"tasks": tasks, "sprints": storage.get_all_sprints()}
 
 
 @app.post("/api/sprints/start", response_model=SprintOut)

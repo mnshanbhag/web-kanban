@@ -933,7 +933,7 @@ async def test_archive_all_done_skips_already_archived_and_trashed_tasks(client)
     assert response.json() == {"archived": 0}
 
 
-async def test_export_includes_active_and_trashed_tasks(client):
+async def test_export_includes_subtasks_notes_and_sprints_but_not_trash(client):
     kan_1 = (
         await client.post("/api/tasks", json={"column": "To Do", "title": "Keep me"})
     ).json()["id"]
@@ -942,24 +942,42 @@ async def test_export_includes_active_and_trashed_tasks(client):
     ).json()["id"]
     await client.delete(f"/api/tasks/{kan_2}")
 
+    subtask = (
+        await client.post(f"/api/tasks/{kan_1}/subtasks", json={"title": "Do the thing"})
+    ).json()
+    note = (await client.post(f"/api/tasks/{kan_1}/notes", json={"body": "First note"})).json()
+
+    sprint = (
+        await client.post("/api/sprints/start", json={"name": "Sprint 1", "duration_weeks": 2})
+    ).json()
+
     response = await client.get("/api/export")
 
     assert response.status_code == 200
     export = response.json()
 
-    assert export["tasks"] == (await client.get("/api/tasks")).json()
-    assert export["trash"] == (await client.get("/api/trash")).json()
+    assert "trash" not in export
 
-    assert export["tasks"]["To Do"][0]["id"] == kan_1
-    assert export["trash"][0]["id"] == kan_2
-    assert export["trash"][0]["deleted_from"] == "In Progress"
+    assert len(export["tasks"]["To Do"]) == 1
+    exported_task = export["tasks"]["To Do"][0]
+    assert exported_task["id"] == kan_1
+    assert exported_task["subtasks"] == [subtask]
+    assert exported_task["notes"] == [note]
+    assert exported_task["sprint_id"] == sprint["id"]
+
+    # The trashed task doesn't appear anywhere in the export.
+    assert all(
+        task["id"] != kan_2 for tasks in export["tasks"].values() for task in tasks
+    )
+
+    assert export["sprints"] == [sprint]
 
 
 async def test_export_with_no_tasks_returns_empty_shapes(client):
     response = await client.get("/api/export")
 
     assert response.status_code == 200
-    assert response.json() == {"tasks": {}, "trash": []}
+    assert response.json() == {"tasks": {}, "sprints": []}
 
 
 async def test_add_note_and_list_returns_it(client):

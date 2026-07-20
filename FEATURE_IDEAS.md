@@ -31,6 +31,23 @@ originally-proposed export/import pair (see remaining import scope under Propose
 `feature_json_export` (2026-07-13) — also served as a live test that `feature-implementer` can
 use the new `new-endpoint` skill.
 
+**Revised (2026-07-20):** an audit against the live schema ahead of building JSON import found
+the export had gone stale — several features shipped since (Scrum sprints, subtask checklists,
+the per-task activity log) were never reflected in it. `trash` is now dropped from the response
+entirely (exported trashed tasks are out of scope for round-tripping via import). Each exported
+task now carries its real `TaskSubtask`/`TaskNote` rows, not just the `subtask_total`/
+`subtask_done` counts `TaskOut` already exposed — a new `ExportTaskOut(TaskOut)` schema adds
+`subtasks: list[SubtaskOut]`/`notes: list[NoteOut]`, built per-task in the export endpoint by
+reusing `storage.get_subtasks()`/`storage.get_notes()` rather than widening the base `TaskOut`
+(which every board fetch uses — that would've added N+1 queries there for no reason). The
+`Sprint` table itself is now exported too: a task's `sprint_id` rode along on `TaskOut` already,
+but with no sprint rows in the export it pointed at nothing on import into an empty/different
+database, so a new `storage.get_all_sprints()` (the first storage function returning every sprint
+regardless of status — `get_active_sprint`/`get_planned_sprint`/`get_past_sprints()` each return
+only one status) is exposed as `ExportOut.sprints`. Archive stays excluded, unchanged (still
+shelved behind `ARCHIVE_ENABLED = false`, see Shelved section). Revised on `feature_json_import`
+(2026-07-20), ahead of building JSON import (Proposed #2) against this corrected shape.
+
 ### Scrum sprints
 A lightweight, optional time-boxing layer over the existing continuous board: start a named
 sprint with a fixed duration (1/2/3/4 weeks, picked from today), and a banner above the board
@@ -186,8 +203,12 @@ Import side of the export/import pair — the export half was split off and hand
 - **Why:** export alone only covers backup, not restore.
 - **Scope:** the harder half — must mint *new* IDs and remap `blocked_by` references rather than
   reusing exported IDs, since reusing them risks colliding with or resurrecting IDs the
-  `AUTOINCREMENT` guarantee has already retired.
+  `AUTOINCREMENT` guarantee has already retired. Also needs to remap `sprint_id` (now that sprints
+  are part of the export, see the Revised paragraph on the Shipped "JSON export" entry above) and
+  attach subtasks/notes to newly-minted task IDs.
 - **Tension:** don't start this until export has shipped and been used at least once.
+- The export's shape was corrected on `feature_json_import` (2026-07-20) — trash dropped,
+  real subtasks/notes added, sprints added — build import against that corrected shape.
 
 ### 3. PostgreSQL support (for Vercel deployment)
 Make the storage layer able to run against Postgres instead of (or alongside) SQLite, so the app
