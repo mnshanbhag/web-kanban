@@ -1326,8 +1326,18 @@ body {
   box-shadow: var(--fab-shadow-hover);
 }
 
-.past-sprints-fab {
+.import-fab {
   right: 13.5rem;
+}
+
+.import-fab:hover {
+  color: var(--accent);
+  transform: translateY(-2px);
+  box-shadow: var(--fab-shadow-hover);
+}
+
+.past-sprints-fab {
+  right: 17.5rem;
 }
 
 .past-sprints-fab:hover {

@@ -654,6 +654,16 @@ def _assert_sprint_name_available(session: Session, name: str) -> None:
         raise FileExistsError(f"A sprint named '{name}' already exists")
 
 
+def get_all_sprints() -> list[dict]:
+    """Every sprint row regardless of status (active + planned + closed), for export -- unlike
+    get_active_sprint/get_planned_sprint/get_past_sprints, which each return only one status
+    subset. Ordered by id since there's no single recency field spanning all three statuses
+    (planned sprints have no start_date/closed_at yet)."""
+    with _session() as session:
+        sprints = session.query(Sprint).order_by(Sprint.id).all()
+        return [_sprint_to_dict(s) for s in sprints]
+
+
 def get_active_sprint() -> Optional[dict]:
     with _session() as session:
         sprint = (
@@ -847,6 +857,130 @@ def end_sprint(next_name: Optional[str] = None, next_duration_weeks: Optional[in
         session.commit()
         session.refresh(new_sprint)
         return _sprint_to_dict(new_sprint)
+
+
+def import_data(payload: dict) -> dict:
+    """Restore tasks/sprints from a `GET /api/export`-shaped payload.
+
+    Additive, not wipe-and-replace -- rows are added to whatever's already in the DB. Every id in
+    the payload (sprint ids, "KAN-NN" task ids) is local to that file and gets remapped to a
+    freshly minted id here rather than reused, same reasoning as the "IDs are never reused"
+    invariant elsewhere: reusing an id risks colliding with or resurrecting one AUTOINCREMENT has
+    already retired. Nothing is committed until every row validates, so a failure partway through
+    (a title collision, an orphaned blocker reference, ...) leaves the session uncommitted and its
+    `.close()` on exit discards everything -- the same one-`session.commit()`-at-the-end pattern
+    `end_sprint` uses for its own multi-step atomic work.
+
+    Timestamps (Task.updated_at, TaskNote.created_at, Sprint.closed_at) are preserved from the
+    file rather than reset to "now" -- import is a restore of prior state, not new activity.
+    """
+    with _session() as session:
+        sprints_payload = payload.get("sprints", [])
+        tasks_payload = payload.get("tasks", {})
+
+        active_in_file = [s for s in sprints_payload if s["status"] == SPRINT_STATUS_ACTIVE]
+        planned_in_file = [s for s in sprints_payload if s["status"] == SPRINT_STATUS_PLANNED]
+        if len(active_in_file) > 1:
+            raise ValueError("Import file contains more than one active sprint")
+        if len(planned_in_file) > 1:
+            raise ValueError("Import file contains more than one planned sprint")
+        if active_in_file and (
+            session.query(Sprint).filter(Sprint.status == SPRINT_STATUS_ACTIVE).first()
+            is not None
+        ):
+            raise ValueError("An active sprint already exists")
+        if planned_in_file and (
+            session.query(Sprint).filter(Sprint.status == SPRINT_STATUS_PLANNED).first()
+            is not None
+        ):
+            raise ValueError("A sprint is already planned")
+
+        sprint_id_map: dict[int, int] = {}
+        for s in sprints_payload:
+            _assert_sprint_name_available(session, s["name"])
+            new_sprint = Sprint(
+                name=s["name"],
+                start_date=date.fromisoformat(s["start_date"]) if s.get("start_date") else None,
+                end_date=date.fromisoformat(s["end_date"]) if s.get("end_date") else None,
+                duration_weeks=s.get("duration_weeks"),
+                status=s["status"],
+                closed_at=(
+                    datetime.fromisoformat(s["closed_at"]) if s.get("closed_at") else None
+                ),
+            )
+            session.add(new_sprint)
+            session.flush()
+            sprint_id_map[s["id"]] = new_sprint.id
+
+        task_id_map: dict[str, int] = {}
+        pending_blocks: list[tuple[int, str]] = []
+        tasks_imported = 0
+        for column, column_tasks in tasks_payload.items():
+            for t in column_tasks:
+                priority = _validate_priority(t["priority"])
+                _assert_title_available(session, column, t["title"])
+
+                sprint_id = None
+                if t.get("sprint_id") is not None:
+                    if t["sprint_id"] not in sprint_id_map:
+                        raise ValueError(
+                            f"Task '{t['id']}' references sprint id {t['sprint_id']}, which is "
+                            "not present in this import"
+                        )
+                    sprint_id = sprint_id_map[t["sprint_id"]]
+
+                new_task = Task(
+                    title=t["title"],
+                    description=t.get("description", ""),
+                    column=column,
+                    priority=priority,
+                    due_date=(
+                        datetime.fromisoformat(t["due_date"]) if t.get("due_date") else None
+                    ),
+                    sprint_id=sprint_id,
+                    updated_at=(
+                        datetime.fromisoformat(t["updated_at"]) if t.get("updated_at") else None
+                    ),
+                )
+                session.add(new_task)
+                session.flush()
+                task_id_map[t["id"]] = new_task.id
+                tasks_imported += 1
+
+                if t.get("blocked_by"):
+                    pending_blocks.append((new_task.id, t["blocked_by"]))
+
+                for st in t.get("subtasks", []):
+                    session.add(
+                        TaskSubtask(
+                            task_id=new_task.id,
+                            title=st["title"],
+                            done=st["done"],
+                            position=st["position"],
+                        )
+                    )
+                for note in t.get("notes", []):
+                    session.add(
+                        TaskNote(
+                            task_id=new_task.id,
+                            body=note["body"],
+                            created_at=datetime.fromisoformat(note["created_at"]),
+                        )
+                    )
+
+        for new_pk, old_blocked_by in pending_blocks:
+            if old_blocked_by not in task_id_map:
+                raise ValueError(
+                    f"Blocker task '{old_blocked_by}' is not present in this import"
+                )
+            blocker_pk = task_id_map[old_blocked_by]
+            blocker_task = session.get(Task, blocker_pk)
+            if blocker_task.column == DONE_COLUMN:
+                raise ValueError(f"Blocker task '{old_blocked_by}' is already Done")
+            session.get(Task, new_pk).blocked_by_id = blocker_pk
+
+        session.commit()
+        return {"sprints_imported": len(sprint_id_map), "tasks_imported": tasks_imported}
 
 
 def get_past_sprints() -> list[dict]:

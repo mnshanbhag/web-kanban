@@ -15,6 +15,7 @@ from backend.schemas import (
     EmptyTrashResponse,
     ExportOut,
     IdResponse,
+    ImportResult,
     NoteCreate,
     NoteOut,
     PastSprintOut,
@@ -252,7 +253,29 @@ def unarchive_task(task_id: str):
 
 @app.get("/api/export", response_model=ExportOut)
 def export_data():
-    return {"tasks": storage.get_all_boards(), "trash": storage.get_trash()}
+    boards = storage.get_all_boards()
+    tasks = {
+        column: [
+            {
+                **task,
+                "subtasks": storage.get_subtasks(task["id"]),
+                "notes": storage.get_notes(task["id"]),
+            }
+            for task in column_tasks
+        ]
+        for column, column_tasks in boards.items()
+    }
+    return {"tasks": tasks, "sprints": storage.get_all_sprints()}
+
+
+@app.post("/api/import", response_model=ImportResult)
+def import_data(body: ExportOut):
+    try:
+        return storage.import_data(body.model_dump())
+    except FileExistsError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post("/api/sprints/start", response_model=SprintOut)

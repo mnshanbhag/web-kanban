@@ -933,7 +933,7 @@ async def test_archive_all_done_skips_already_archived_and_trashed_tasks(client)
     assert response.json() == {"archived": 0}
 
 
-async def test_export_includes_active_and_trashed_tasks(client):
+async def test_export_includes_subtasks_notes_and_sprints_but_not_trash(client):
     kan_1 = (
         await client.post("/api/tasks", json={"column": "To Do", "title": "Keep me"})
     ).json()["id"]
@@ -942,24 +942,160 @@ async def test_export_includes_active_and_trashed_tasks(client):
     ).json()["id"]
     await client.delete(f"/api/tasks/{kan_2}")
 
+    subtask = (
+        await client.post(f"/api/tasks/{kan_1}/subtasks", json={"title": "Do the thing"})
+    ).json()
+    note = (await client.post(f"/api/tasks/{kan_1}/notes", json={"body": "First note"})).json()
+
+    sprint = (
+        await client.post("/api/sprints/start", json={"name": "Sprint 1", "duration_weeks": 2})
+    ).json()
+
     response = await client.get("/api/export")
 
     assert response.status_code == 200
     export = response.json()
 
-    assert export["tasks"] == (await client.get("/api/tasks")).json()
-    assert export["trash"] == (await client.get("/api/trash")).json()
+    assert "trash" not in export
 
-    assert export["tasks"]["To Do"][0]["id"] == kan_1
-    assert export["trash"][0]["id"] == kan_2
-    assert export["trash"][0]["deleted_from"] == "In Progress"
+    assert len(export["tasks"]["To Do"]) == 1
+    exported_task = export["tasks"]["To Do"][0]
+    assert exported_task["id"] == kan_1
+    assert exported_task["subtasks"] == [subtask]
+    assert exported_task["notes"] == [note]
+    assert exported_task["sprint_id"] == sprint["id"]
+
+    # The trashed task doesn't appear anywhere in the export.
+    assert all(
+        task["id"] != kan_2 for tasks in export["tasks"].values() for task in tasks
+    )
+
+    assert export["sprints"] == [sprint]
 
 
 async def test_export_with_no_tasks_returns_empty_shapes(client):
     response = await client.get("/api/export")
 
     assert response.status_code == 200
-    assert response.json() == {"tasks": {}, "trash": []}
+    assert response.json() == {"tasks": {}, "sprints": []}
+
+
+async def test_import_round_trips_a_full_export_into_a_fresh_board(client, tmp_path, monkeypatch):
+    await client.post("/api/sprints/start", json={"name": "Sprint 1", "duration_weeks": 2})
+    kan_a = (
+        await client.post(
+            "/api/tasks", json={"column": "To Do", "title": "Task A", "priority": "High"}
+        )
+    ).json()["id"]
+    kan_b = (
+        await client.post(
+            "/api/tasks", json={"column": "To Do", "title": "Task B", "blocked_by": kan_a}
+        )
+    ).json()["id"]
+    await client.post(f"/api/tasks/{kan_a}/subtasks", json={"title": "sub 1"})
+    await client.post(f"/api/tasks/{kan_a}/notes", json={"body": "a note"})
+    await client.put(f"/api/tasks/{kan_b}/due-date", json={"due_date": "2026-08-01T00:00:00+00:00"})
+
+    export = (await client.get("/api/export")).json()
+
+    # Point storage at a second, empty database -- import is additive, so re-importing into the
+    # same DB the export came from would just collide on titles/sprint names.
+    monkeypatch.setattr(storage, "DATA_DIR", tmp_path / "restored")
+
+    response = await client.post("/api/import", json=export)
+    assert response.status_code == 200
+    assert response.json() == {"sprints_imported": 1, "tasks_imported": 2}
+
+    board = (await client.get("/api/tasks")).json()
+    restored_a = next(t for t in board["To Do"] if t["title"] == "Task A")
+    restored_b = next(t for t in board["To Do"] if t["title"] == "Task B")
+
+    # ids were re-minted, not reused, but the blocking relationship still resolved correctly.
+    assert restored_b["blocked_by"] == restored_a["id"]
+    assert restored_a["blocks"] == [restored_b["id"]]
+    assert restored_a["priority"] == "High"
+    assert restored_a["subtask_total"] == 1
+    assert restored_b["due_date"] == "2026-08-01T00:00:00+00:00"
+    # sprint_id was remapped to the newly-created sprint's id, not the original file's id.
+    sprints = (await client.get("/api/sprints/active")).json()
+    assert restored_a["sprint_id"] == sprints["id"]
+
+    subtasks = (await client.get(f"/api/tasks/{restored_a['id']}/subtasks")).json()
+    assert [s["title"] for s in subtasks] == ["sub 1"]
+    notes = (await client.get(f"/api/tasks/{restored_a['id']}/notes")).json()
+    assert [n["body"] for n in notes] == ["a note"]
+
+
+async def test_import_rejects_a_task_title_that_collides_with_an_existing_task(client):
+    await client.post("/api/tasks", json={"column": "To Do", "title": "Existing"})
+    export = {"tasks": {"To Do": [{
+        "id": "KAN-99", "title": "Existing", "description": "", "priority": "Medium",
+        "blocked_by": None, "blocks": [], "due_date": None, "subtask_total": 0,
+        "subtask_done": 0, "updated_at": None, "sprint_id": None, "subtasks": [], "notes": [],
+    }]}, "sprints": []}
+
+    response = await client.post("/api/import", json=export)
+
+    assert response.status_code == 409
+
+
+async def test_import_rejects_a_sprint_name_that_collides_with_an_existing_sprint(client):
+    await client.post("/api/sprints/start", json={"name": "Sprint 1", "duration_weeks": 2})
+    await client.post("/api/sprints/end", json={"name": "Sprint 2", "duration_weeks": 2})
+    export = {"tasks": {}, "sprints": [{
+        "id": 1, "name": "Sprint 2", "start_date": "2026-01-01", "end_date": "2026-01-15",
+        "duration_weeks": 2, "status": "closed", "closed_at": "2026-01-15T00:00:00+00:00",
+    }]}
+
+    response = await client.post("/api/import", json=export)
+
+    assert response.status_code == 409
+
+
+async def test_import_rejects_a_second_active_sprint(client):
+    await client.post("/api/sprints/start", json={"name": "Live Sprint", "duration_weeks": 2})
+    export = {"tasks": {}, "sprints": [{
+        "id": 1, "name": "Imported Active", "start_date": "2026-01-01", "end_date": "2026-01-15",
+        "duration_weeks": 2, "status": "active", "closed_at": None,
+    }]}
+
+    response = await client.post("/api/import", json=export)
+
+    assert response.status_code == 400
+
+
+async def test_import_rejects_a_blocked_by_reference_not_present_in_the_file(client):
+    export = {"tasks": {"To Do": [{
+        "id": "KAN-01", "title": "Orphan blocker", "description": "", "priority": "Medium",
+        "blocked_by": "KAN-99", "blocks": [], "due_date": None, "subtask_total": 0,
+        "subtask_done": 0, "updated_at": None, "sprint_id": None, "subtasks": [], "notes": [],
+    }]}, "sprints": []}
+
+    response = await client.post("/api/import", json=export)
+
+    assert response.status_code == 400
+
+
+async def test_import_is_atomic_when_a_later_task_collides(client):
+    await client.post("/api/tasks", json={"column": "To Do", "title": "Already here"})
+    export = {"tasks": {"To Do": [
+        {
+            "id": "KAN-01", "title": "Brand new", "description": "", "priority": "Medium",
+            "blocked_by": None, "blocks": [], "due_date": None, "subtask_total": 0,
+            "subtask_done": 0, "updated_at": None, "sprint_id": None, "subtasks": [], "notes": [],
+        },
+        {
+            "id": "KAN-02", "title": "Already here", "description": "", "priority": "Medium",
+            "blocked_by": None, "blocks": [], "due_date": None, "subtask_total": 0,
+            "subtask_done": 0, "updated_at": None, "sprint_id": None, "subtasks": [], "notes": [],
+        },
+    ]}, "sprints": []}
+
+    response = await client.post("/api/import", json=export)
+
+    assert response.status_code == 409
+    board = (await client.get("/api/tasks")).json()
+    assert [t["title"] for t in board["To Do"]] == ["Already here"]
 
 
 async def test_add_note_and_list_returns_it(client):

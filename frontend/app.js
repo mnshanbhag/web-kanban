@@ -48,6 +48,9 @@ const themeToggle = document.getElementById("theme-toggle");
 
 const exportFab = document.getElementById("export-fab");
 
+const importFab = document.getElementById("import-fab");
+const importFileInput = document.getElementById("import-file-input");
+
 const trashFab = document.getElementById("trash-fab");
 const trashBadge = document.getElementById("trash-badge");
 const trashModalOverlay = document.getElementById("trash-modal-overlay");
@@ -802,6 +805,36 @@ async function downloadExport() {
   URL.revokeObjectURL(url);
 }
 
+function triggerImportPicker() {
+  importFileInput.value = "";
+  importFileInput.click();
+}
+
+async function importBackupFile(file) {
+  let data;
+  try {
+    data = JSON.parse(await file.text());
+  } catch (err) {
+    showError("That file isn't valid JSON.");
+    return;
+  }
+
+  const res = await fetch(`${API_BASE}/import`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    await handleApiError(res);
+    return;
+  }
+
+  await refreshSprintBanner();
+  await refreshLastSprintPanel();
+  await refreshNextSprintPanel();
+  await loadBoard();
+}
+
 async function fetchActiveSprint() {
   const res = await fetch(`${API_BASE}/sprints/active`);
   if (!res.ok) return null;
@@ -1216,6 +1249,15 @@ themeToggle.addEventListener("click", () => {
 });
 
 exportFab.addEventListener("click", downloadExport);
+
+importFab.addEventListener("click", triggerImportPicker);
+importFileInput.addEventListener("change", () => {
+  const file = importFileInput.files[0];
+  if (!file) return;
+  confirmAction(`Import "${file.name}"? This adds its tasks/sprints to the current board.`, () =>
+    importBackupFile(file)
+  );
+});
 
 trashFab.addEventListener("click", openTrashModal);
 trashModalClose.addEventListener("click", closeTrashModal);
