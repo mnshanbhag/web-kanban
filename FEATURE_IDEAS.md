@@ -266,6 +266,58 @@ requests once deployed there.
 - **Status:** idea only, not scoped down or handed to `feature-implementer` yet — open questions
   above (dual support vs. Postgres-only, Alembic vs. not) need a decision first.
 
+### 3. Bulk actions via multi-select
+Select several cards at once (a toggleable "select mode") and apply one action — move to a
+column, delete, set priority — to all of them in one step.
+- **Why:** growing task counts across sprints make one-at-a-time cleanup tedious — e.g. moving a
+  batch of stale To Do cards into the current sprint's Done column, or clearing several stragglers
+  to In Progress at once. This is still a single local user managing their own board, so it stays
+  scoped to the board they already see, not a team/permissions feature.
+- **Scope:** medium — frontend: a toolbar toggle for "select mode" that reveals a small checkbox
+  on each card only while active (cards stay visually unchanged the rest of the time), plus a
+  bulk-action bar once ≥1 card is selected. Backend: could reuse the existing single-task
+  endpoints in a loop (simplest, no new endpoints) rather than adding bulk-specific ones — board
+  sizes here are small enough that sequential round-trips shouldn't matter in practice.
+- **Tension:**
+  - The card-density decision (see `feedback_card_density` in memory) put editing controls in the
+    detail modal, not the card — a select-mode checkbox is a selection control rather than an
+    editing one, but it should stay strictly opt-in/hidden-until-toggled to stay consistent with
+    that spirit.
+  - Bulk moves into Done still need `move_task`'s per-task blocking check (a blocked task can't
+    reach Done) and bulk deletes still need `delete_task`'s per-task Done-guard — a mixed selection
+    can partially fail, so the UI needs to report per-task success/failure, not one all-or-nothing
+    toast.
+  - No bulk endpoint exists today anywhere in `main.py` — this would be a new pattern if the
+    loop-of-single-calls approach ever proves insufficient and a real bulk endpoint gets added
+    later.
+- **Tracked as:** #14
+
+### 4. Undo toast for the last action
+After moving a card, changing its priority, or blocking/unblocking it, a toast appears for a few
+seconds with an "Undo" button that reverses just that one change.
+- **Why:** drag-and-drop boards are prone to misclicks/mis-drops (wrong column, fat-fingered
+  priority pill), and this is a single local user with nobody else to fix it for them — right now
+  the only recovery is manually redoing the opposite action by hand. Delete already has a safety
+  net (the recycle bin); no other mutation does.
+- **Scope:** small-medium, frontend-only — track just the single most recent mutation (task id,
+  field, previous value) in memory, show a dismissible toast alongside the existing `showError`
+  toast machinery, and call the same setter (`moveTask`/`setPriority`/`setBlockedBy`/`setDueDate`)
+  with the prior value on click. No new backend endpoints needed: every mutation already has a
+  corresponding "set to X" endpoint, so undo is just "set back to what it was."
+- **Tension:**
+  - Moving a task *to* Done can cascade-clear `blocked_by_id` on every task that pointed at it
+    (the Done-cascade rule) — undoing that move (back out of Done) doesn't un-cascade those
+    dependents' cleared blocks, so undo can't promise a full state restore in that one case.
+    Either scope undo to just the moved task's own fields and say so in the toast copy, or exclude
+    Done-involved moves from the undo affordance entirely if that's judged too surprising.
+  - Keep this to a single last-action slot, not an undo stack/history UI, matching the "keep it
+    lean" pattern already used elsewhere (e.g. WIP limits' localStorage-only persistence) — and no
+    keyboard shortcut for triggering it, since keyboard shortcuts were already explicitly shelved
+    for lack of tangible benefit.
+  - Delete/restore already has its own safety net (the trash) — don't fold delete into this
+    mechanism too, that'd be a second, confusing path to the same recovery.
+- **Tracked as:** #15
+
 ---
 
 ## ❌ Shelved
