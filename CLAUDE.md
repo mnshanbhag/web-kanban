@@ -173,7 +173,27 @@ key for what's proposed/in-progress/shipped/shelved.
   current sprint ends earlier/later than expected, without needing any extra logic: the real
   `start_date` is computed fresh at promotion time regardless of what this preview showed.
 - `frontend/app.js` — no build tooling, no framework. 4 columns (`COLUMNS` = To Do, In Progress,
-  In Review, Done — no separate "Blocked" column).
+  In Review, Done — no separate "Blocked" column). The file is organized into labelled sections,
+  each holding the single source of truth for one concern — prefer reusing these over re-inlining
+  the pattern:
+  - **Constants** — `API_BASE`, `COLUMNS`, `DONE_COLUMN`, `PRIORITIES`, `DEFAULT_PRIORITY`,
+    storage keys, `DEFAULT_SPRINT_DURATION`, `ARCHIVE_ENABLED`. No string literal for a column or
+    priority should appear anywhere else in the file.
+  - **DOM lookups** — a `dom` object built via `const $ = (id) => document.getElementById(id)`.
+    Static elements go in `dom`; per-column ids (`count-${column}`, `wip-limit-${column}`) are
+    still looked up inline, since they're computed per render and can't be static keys.
+  - **API** — `apiFetch(path, {method, body})` builds the URL and JSON headers and returns the raw
+    `Response`; `api.get/post/put/del` wrap it. `ensureOk(res)` is the shared success gate
+    (`if (!(await ensureOk(res))) return;`) — on failure it routes through `handleApiError` →
+    `showError` → the toast, which is why endpoints' `detail` strings surface verbatim. Callers
+    still `encodeURIComponent` ids themselves.
+  - **Overlays** — `openOverlay`/`closeOverlay`/`isOverlayOpen`/`wireOverlayDismiss` for every
+    modal, plus `addClass`/`removeClass`/`toggleClass` wrappers. These are what the modals key on;
+    don't hand-roll `classList.add("open")`.
+  - **`sprintState`** — holds the active/planned sprint (`setActive`/`setPlanned`). `tasksForColumn`
+    reads `sprintState.activeId` for the Done-column filtering described above, so sprint data has
+    one owner rather than loose module variables.
+
   Talks to the API with `fetch`. Drag-and-drop just calls the move endpoint directly now; there's
   no special-cased drop target anymore. Each card shows an inline "Blocked by KAN-XX" /
   "Blocks KAN-YY" badge when applicable (rendered in-place, cards never move or group by blocked

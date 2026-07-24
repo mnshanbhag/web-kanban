@@ -1,3 +1,6 @@
+// =============================================================================
+// Constants (single source of truth)
+// =============================================================================
 const API_BASE = "/api";
 const COLUMNS = ["To Do", "In Progress", "In Review", "Done"];
 const DONE_COLUMN = "Done";
@@ -6,143 +9,305 @@ const DEFAULT_PRIORITY = "Medium";
 const PRIORITIES = ["Low", "Medium", "High", "Urgent"];
 
 const WIP_LIMITS_STORAGE_KEY = "canban-wip-limits";
+const THEME_STORAGE_KEY = "canban-theme";
+
+// Default matches the `selected` <option> for both sprint-duration <select>s in
+// index.html (Start Sprint and Plan Next Sprint) -- keep them in sync.
+const DEFAULT_SPRINT_DURATION = "2";
 
 // Archive/Unarchive is disabled pending a redesign. UI entry points are
 // hidden in index.html; this also stops the frontend from creating the
 // per-card archive button or polling the archive badge.
 const ARCHIVE_ENABLED = false;
 
-const modalOverlay = document.getElementById("modal-overlay");
-const taskForm = document.getElementById("task-form");
-const titleInput = document.getElementById("task-title");
-const descriptionInput = document.getElementById("task-description");
-const columnSelect = document.getElementById("task-column");
-const priorityInput = document.getElementById("task-priority");
-const blockedByField = document.getElementById("task-blocked-by-field");
-const blockedByInput = document.getElementById("task-blocked-by");
-const dueDateInput = document.getElementById("task-due-date");
+// =============================================================================
+// DOM element lookups
+// =============================================================================
+const $ = (id) => document.getElementById(id);
 
-const taskDetailModalOverlay = document.getElementById("task-detail-modal-overlay");
-const taskDetailForm = document.getElementById("task-detail-form");
-const detailId = document.getElementById("detail-id");
-const detailTitle = document.getElementById("detail-title");
-const detailDescription = document.getElementById("detail-description");
-const detailTags = document.getElementById("detail-tags");
-const detailBlockedByField = document.getElementById("detail-blocked-by-field");
-const detailBlockedByInput = document.getElementById("detail-blocked-by");
-const detailDueDateInput = document.getElementById("detail-due-date");
-const detailSaveBtn = document.getElementById("detail-save-btn");
-const taskDetailCloseBtn = document.getElementById("task-detail-close");
-const detailSubtaskList = document.getElementById("detail-subtask-list");
-const detailSubtaskInput = document.getElementById("detail-subtask-input");
-const detailSubtaskAddBtn = document.getElementById("detail-subtask-add-btn");
-const detailSubtaskProgress = document.getElementById("detail-subtask-progress");
-const detailNotesList = document.getElementById("detail-notes-list");
-const detailNotesEmptyMessage = document.getElementById("detail-notes-empty-message");
-const detailNoteInput = document.getElementById("detail-note-input");
-const detailNoteAddBtn = document.getElementById("detail-note-add-btn");
+const dom = {
+  // Task-create modal
+  modalOverlay: $("modal-overlay"),
+  modalCancelBtn: $("modal-cancel"),
+  taskForm: $("task-form"),
+  titleInput: $("task-title"),
+  descriptionInput: $("task-description"),
+  columnSelect: $("task-column"),
+  priorityInput: $("task-priority"),
+  blockedByField: $("task-blocked-by-field"),
+  blockedByInput: $("task-blocked-by"),
+  dueDateInput: $("task-due-date"),
 
-const errorToast = document.getElementById("error-toast");
+  // Task-detail modal
+  taskDetailModalOverlay: $("task-detail-modal-overlay"),
+  taskDetailForm: $("task-detail-form"),
+  detailId: $("detail-id"),
+  detailTitle: $("detail-title"),
+  detailDescription: $("detail-description"),
+  detailTags: $("detail-tags"),
+  detailBlockedByField: $("detail-blocked-by-field"),
+  detailBlockedByInput: $("detail-blocked-by"),
+  detailDueDateInput: $("detail-due-date"),
+  detailSaveBtn: $("detail-save-btn"),
+  taskDetailCloseBtn: $("task-detail-close"),
+  detailSubtaskList: $("detail-subtask-list"),
+  detailSubtaskInput: $("detail-subtask-input"),
+  detailSubtaskAddBtn: $("detail-subtask-add-btn"),
+  detailSubtaskProgress: $("detail-subtask-progress"),
+  detailNotesList: $("detail-notes-list"),
+  detailNotesEmptyMessage: $("detail-notes-empty-message"),
+  detailNoteInput: $("detail-note-input"),
+  detailNoteAddBtn: $("detail-note-add-btn"),
 
-const themeToggle = document.getElementById("theme-toggle");
+  // Toast / theme / backup FABs
+  errorToast: $("error-toast"),
+  themeToggle: $("theme-toggle"),
+  exportFab: $("export-fab"),
+  importFab: $("import-fab"),
+  importFileInput: $("import-file-input"),
 
-const exportFab = document.getElementById("export-fab");
+  // Trash (recycle bin)
+  trashFab: $("trash-fab"),
+  trashBadge: $("trash-badge"),
+  trashModalOverlay: $("trash-modal-overlay"),
+  trashList: $("trash-list"),
+  trashEmptyMessage: $("trash-empty-message"),
+  emptyTrashBtn: $("empty-trash-btn"),
+  trashModalClose: $("trash-modal-close"),
 
-const importFab = document.getElementById("import-fab");
-const importFileInput = document.getElementById("import-file-input");
+  // Archive
+  archiveFab: $("archive-fab"),
+  archiveBadge: $("archive-badge"),
+  archiveModalOverlay: $("archive-modal-overlay"),
+  archiveList: $("archive-list"),
+  archiveEmptyMessage: $("archive-empty-message"),
+  archiveModalClose: $("archive-modal-close"),
+  archiveAllBtn: $("archive-all-btn"),
 
-const trashFab = document.getElementById("trash-fab");
-const trashBadge = document.getElementById("trash-badge");
-const trashModalOverlay = document.getElementById("trash-modal-overlay");
-const trashList = document.getElementById("trash-list");
-const trashEmptyMessage = document.getElementById("trash-empty-message");
-const emptyTrashBtn = document.getElementById("empty-trash-btn");
-const trashModalClose = document.getElementById("trash-modal-close");
+  // Confirm modal
+  confirmModalOverlay: $("confirm-modal-overlay"),
+  confirmMessage: $("confirm-message"),
+  confirmCancelBtn: $("confirm-cancel"),
+  confirmConfirmBtn: $("confirm-confirm"),
 
-const archiveFab = document.getElementById("archive-fab");
-const archiveBadge = document.getElementById("archive-badge");
-const archiveModalOverlay = document.getElementById("archive-modal-overlay");
-const archiveList = document.getElementById("archive-list");
-const archiveEmptyMessage = document.getElementById("archive-empty-message");
-const archiveModalClose = document.getElementById("archive-modal-close");
-const archiveAllBtn = document.getElementById("archive-all-btn");
+  // Filters
+  filterSearchInput: $("filter-search"),
+  filterPrioritySelect: $("filter-priority"),
+  filterBlockedOnlyInput: $("filter-blocked-only"),
+  filterClearBtn: $("filter-clear"),
 
-const confirmModalOverlay = document.getElementById("confirm-modal-overlay");
-const confirmMessage = document.getElementById("confirm-message");
-const confirmCancelBtn = document.getElementById("confirm-cancel");
-const confirmConfirmBtn = document.getElementById("confirm-confirm");
+  // Sprint banner + start/end modal
+  sprintBannerActive: $("sprint-banner-active"),
+  sprintBannerInactive: $("sprint-banner-inactive"),
+  sprintBannerName: $("sprint-banner-name"),
+  sprintBannerDates: $("sprint-banner-dates"),
+  sprintBannerDays: $("sprint-banner-days"),
+  startSprintBtn: $("start-sprint-btn"),
+  endSprintBtn: $("end-sprint-btn"),
+  sprintModalOverlay: $("sprint-modal-overlay"),
+  sprintModalTitle: $("sprint-modal-title"),
+  sprintModalHint: $("sprint-modal-hint"),
+  sprintModalSubmitBtn: $("sprint-modal-submit"),
+  sprintForm: $("sprint-form"),
+  sprintNameInput: $("sprint-name"),
+  sprintDurationSelect: $("sprint-duration"),
+  sprintModalCancelBtn: $("sprint-modal-cancel"),
 
-const filterSearchInput = document.getElementById("filter-search");
-const filterPrioritySelect = document.getElementById("filter-priority");
-const filterBlockedOnlyInput = document.getElementById("filter-blocked-only");
-const filterClearBtn = document.getElementById("filter-clear");
+  // Past ("Older") sprints modal
+  pastSprintsFab: $("past-sprints-fab"),
+  pastSprintsModalOverlay: $("past-sprints-modal-overlay"),
+  pastSprintsList: $("past-sprints-list"),
+  pastSprintsEmptyMessage: $("past-sprints-empty-message"),
+  pastSprintsModalClose: $("past-sprints-modal-close"),
 
-const sprintBannerActive = document.getElementById("sprint-banner-active");
-const sprintBannerInactive = document.getElementById("sprint-banner-inactive");
-const sprintBannerName = document.getElementById("sprint-banner-name");
-const sprintBannerDates = document.getElementById("sprint-banner-dates");
-const sprintBannerDays = document.getElementById("sprint-banner-days");
-const startSprintBtn = document.getElementById("start-sprint-btn");
-const endSprintBtn = document.getElementById("end-sprint-btn");
-const sprintModalOverlay = document.getElementById("sprint-modal-overlay");
-const sprintModalTitle = document.getElementById("sprint-modal-title");
-const sprintModalHint = document.getElementById("sprint-modal-hint");
-const sprintModalSubmitBtn = document.getElementById("sprint-modal-submit");
-const sprintForm = document.getElementById("sprint-form");
-const sprintNameInput = document.getElementById("sprint-name");
-const sprintDurationSelect = document.getElementById("sprint-duration");
-const sprintModalCancelBtn = document.getElementById("sprint-modal-cancel");
-let sprintModalMode = "start";
+  // Last sprint panel
+  lastSprintSummaryInfo: $("last-sprint-summary-info"),
+  lastSprintBody: $("last-sprint-body"),
 
-const pastSprintsFab = document.getElementById("past-sprints-fab");
-const pastSprintsModalOverlay = document.getElementById("past-sprints-modal-overlay");
-const pastSprintsList = document.getElementById("past-sprints-list");
-const pastSprintsEmptyMessage = document.getElementById("past-sprints-empty-message");
-const pastSprintsModalClose = document.getElementById("past-sprints-modal-close");
+  // Next (planned) sprint panel
+  nextSprintSummaryInfo: $("next-sprint-summary-info"),
+  nextSprintPlanned: $("next-sprint-planned"),
+  nextSprintName: $("next-sprint-name"),
+  nextSprintDuration: $("next-sprint-duration"),
+  nextSprintAnticipated: $("next-sprint-anticipated"),
+  nextSprintEmptyMessage: $("next-sprint-empty-message"),
+  planSprintForm: $("plan-sprint-form"),
+  planSprintNameInput: $("plan-sprint-name"),
+  planSprintDurationSelect: $("plan-sprint-duration"),
+};
 
-const lastSprintSummaryInfo = document.getElementById("last-sprint-summary-info");
-const lastSprintBody = document.getElementById("last-sprint-body");
-
-const nextSprintSummaryInfo = document.getElementById("next-sprint-summary-info");
-const nextSprintPlanned = document.getElementById("next-sprint-planned");
-const nextSprintName = document.getElementById("next-sprint-name");
-const nextSprintDuration = document.getElementById("next-sprint-duration");
-const nextSprintAnticipated = document.getElementById("next-sprint-anticipated");
-const nextSprintEmptyMessage = document.getElementById("next-sprint-empty-message");
-const planSprintForm = document.getElementById("plan-sprint-form");
-const planSprintNameInput = document.getElementById("plan-sprint-name");
-const planSprintDurationSelect = document.getElementById("plan-sprint-duration");
-
+// =============================================================================
+// Module state
+// =============================================================================
 let toastTimer = null;
 let pendingConfirmAction = null;
 let currentDetailTask = null;
-let activeSprintId = null;
-let activeSprint = null;
-let plannedSprint = null;
+let sprintModalMode = "start";
 
-function showError(message) {
-  errorToast.textContent = message;
-  errorToast.classList.add("visible");
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => errorToast.classList.remove("visible"), 4000);
+// Sprint state manager: single holder for the active/planned sprint data that
+// several render/refresh functions read and write. `activeId` is what the Done
+// column's sprint filtering (see tasksForColumn) keys off of.
+const sprintState = {
+  activeId: null,
+  active: null,
+  planned: null,
+  setActive(sprint) {
+    this.active = sprint;
+    this.activeId = sprint ? sprint.id : null;
+  },
+  setPlanned(sprint) {
+    this.planned = sprint;
+  },
+};
+
+// =============================================================================
+// CSS class helpers
+// =============================================================================
+function addClass(el, cls) {
+  el.classList.add(cls);
 }
 
-async function loadBoard() {
-  const res = await fetch(`${API_BASE}/tasks`);
-  const board = await res.json();
-  renderBoard(board);
+function removeClass(el, cls) {
+  el.classList.remove(cls);
+}
+
+function toggleClass(el, cls, force) {
+  return arguments.length > 2 ? el.classList.toggle(cls, force) : el.classList.toggle(cls);
+}
+
+// =============================================================================
+// Modal / overlay helpers
+// =============================================================================
+function openOverlay(overlay) {
+  addClass(overlay, "open");
+}
+
+function closeOverlay(overlay) {
+  removeClass(overlay, "open");
+}
+
+function isOverlayOpen(overlay) {
+  return overlay.classList.contains("open");
+}
+
+// Wire an overlay's shared dismiss triggers: its close/cancel button (if any)
+// and a click on the backdrop itself.
+function wireOverlayDismiss(overlay, close, closeBtn) {
+  if (closeBtn) closeBtn.addEventListener("click", close);
+  overlay.addEventListener("click", (event) => {
+    if (event.target === overlay) close();
+  });
+}
+
+// =============================================================================
+// Fetch API wrapper
+// =============================================================================
+// Low-level: builds `${API_BASE}${path}`, sets JSON headers + stringifies the
+// body when one is given, and returns the raw Response. Callers keep doing their
+// own encodeURIComponent on ids in `path`.
+function apiFetch(path, { method, body } = {}) {
+  const options = {};
+  if (method) options.method = method;
+  if (body !== undefined) {
+    options.headers = { "Content-Type": "application/json" };
+    options.body = JSON.stringify(body);
+  }
+  return fetch(`${API_BASE}${path}`, options);
+}
+
+const api = {
+  get: (path) => apiFetch(path),
+  post: (path, body) => apiFetch(path, { method: "POST", body }),
+  put: (path, body) => apiFetch(path, { method: "PUT", body }),
+  del: (path) => apiFetch(path, { method: "DELETE" }),
+};
+
+// Shared "did the request succeed?" gate: on failure surfaces the API's error
+// message via the toast and returns false, so callers can `if (!(await
+// ensureOk(res))) return ...`.
+async function ensureOk(res) {
+  if (res.ok) return true;
+  await handleApiError(res);
+  return false;
+}
+
+async function handleApiError(res) {
+  const body = await res.json().catch(() => ({}));
+  showError(body.detail || "Something went wrong.");
+}
+
+function showError(message) {
+  dom.errorToast.textContent = message;
+  addClass(dom.errorToast, "visible");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => removeClass(dom.errorToast, "visible"), 4000);
+}
+
+// =============================================================================
+// Utilities (date formatting + task filtering)
+// =============================================================================
+function formatRelativeTime(isoString) {
+  const then = new Date(isoString).getTime();
+  const seconds = Math.max(0, Math.floor((Date.now() - then) / 1000));
+
+  if (seconds < 60) return "just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+function formatDueDate(dueDate) {
+  return new Date(dueDate).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function isOverdue(dueDate, column) {
+  if (column === DONE_COLUMN) return false;
+  return new Date(dueDate).getTime() < Date.now();
+}
+
+function formatSprintDate(dateString) {
+  return new Date(`${dateString}T00:00:00`).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function formatDaysRemaining(endDateString) {
+  const end = new Date(`${endDateString}T00:00:00`);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const days = Math.round((end.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+  if (days > 1) return { label: `${days} days left`, overdue: false };
+  if (days === 1) return { label: "1 day left", overdue: false };
+  if (days === 0) return { label: "Ends today", overdue: false };
+  return { label: `${Math.abs(days)}d overdue`, overdue: true };
 }
 
 function tasksForColumn(column, board) {
   const tasks = board[column] || [];
-  if (column !== DONE_COLUMN || activeSprintId === null) return tasks;
+  if (column !== DONE_COLUMN || sprintState.activeId === null) return tasks;
 
   // Done is the one column that isn't inherently sprint-scoped (it holds
   // every completion ever, not just this sprint's) -- filter it down to the
   // active sprint's completions, but keep legacy tasks that predate sprints
   // entirely (sprint_id null) since they'd otherwise vanish from view with
   // nowhere else to surface them.
-  return tasks.filter((task) => task.sprint_id === activeSprintId || task.sprint_id == null);
+  return tasks.filter(
+    (task) => task.sprint_id === sprintState.activeId || task.sprint_id == null
+  );
+}
+
+// =============================================================================
+// Board rendering
+// =============================================================================
+async function loadBoard() {
+  const res = await api.get("/tasks");
+  const board = await res.json();
+  renderBoard(board);
 }
 
 function renderBoard(board) {
@@ -158,7 +323,7 @@ function renderBoard(board) {
     countEl.textContent = tasks.length;
     syncWipLimitInput(column);
     updateWipLimitIndicator(column, tasks.length);
-    if (column === DONE_COLUMN) archiveAllBtn.disabled = tasks.length === 0;
+    if (column === DONE_COLUMN) dom.archiveAllBtn.disabled = tasks.length === 0;
   }
   applyFilters();
 }
@@ -200,9 +365,9 @@ function updateWipLimitIndicator(column, count) {
   const input = document.getElementById(`wip-limit-${column}`);
   const limit = getWipLimit(column);
   const overLimit = limit !== null && count > limit;
-  countEl.classList.toggle("over-limit", overLimit);
+  toggleClass(countEl, "over-limit", overLimit);
   countEl.title = overLimit ? `${count} of ${limit} WIP limit exceeded` : "";
-  if (input) input.classList.toggle("over-limit", overLimit);
+  if (input) toggleClass(input, "over-limit", overLimit);
 }
 
 function commitWipLimitInput(input) {
@@ -344,152 +509,102 @@ function createCardElement(column, task) {
   card.addEventListener("click", () => openTaskDetail(column, task));
 
   card.addEventListener("dragstart", () => {
-    card.classList.add("dragging");
+    addClass(card, "dragging");
   });
   card.addEventListener("dragend", () => {
-    card.classList.remove("dragging");
+    removeClass(card, "dragging");
   });
 
   return card;
 }
 
-async function handleApiError(res) {
-  const body = await res.json().catch(() => ({}));
-  showError(body.detail || "Something went wrong.");
-}
-
+// =============================================================================
+// Task CRUD
+// =============================================================================
 async function createTask(column, title, description, blockedBy, priority, dueDate) {
-  const res = await fetch(`${API_BASE}/tasks`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      column,
-      title,
-      description,
-      blocked_by: blockedBy || null,
-      priority: priority || DEFAULT_PRIORITY,
-      due_date: dueDate || null,
-    }),
+  const res = await api.post("/tasks", {
+    column,
+    title,
+    description,
+    blocked_by: blockedBy || null,
+    priority: priority || DEFAULT_PRIORITY,
+    due_date: dueDate || null,
   });
-  if (!res.ok) {
-    await handleApiError(res);
-    return false;
-  }
+  if (!(await ensureOk(res))) return false;
   await loadBoard();
   return true;
 }
 
 async function setPriority(taskId, priority) {
-  await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/priority`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ priority }),
-  });
+  await api.put(`/tasks/${encodeURIComponent(taskId)}/priority`, { priority });
   await loadBoard();
 }
 
 async function moveTask(taskId, toColumn) {
-  const res = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/move`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ to_column: toColumn }),
-  });
-  if (!res.ok) {
-    await handleApiError(res);
-    return false;
-  }
+  const res = await api.put(`/tasks/${encodeURIComponent(taskId)}/move`, { to_column: toColumn });
+  if (!(await ensureOk(res))) return false;
   await loadBoard();
   return true;
 }
 
 async function setBlockedBy(taskId, blockedBy) {
-  const res = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/blocked-by`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ blocked_by: blockedBy || null }),
+  const res = await api.put(`/tasks/${encodeURIComponent(taskId)}/blocked-by`, {
+    blocked_by: blockedBy || null,
   });
-  if (!res.ok) {
-    await handleApiError(res);
-    return false;
-  }
+  if (!(await ensureOk(res))) return false;
   await loadBoard();
   return true;
 }
 
 async function setDueDate(taskId, dueDate) {
-  const res = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/due-date`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ due_date: dueDate || null }),
+  const res = await api.put(`/tasks/${encodeURIComponent(taskId)}/due-date`, {
+    due_date: dueDate || null,
   });
-  if (!res.ok) {
-    await handleApiError(res);
-    return false;
-  }
+  if (!(await ensureOk(res))) return false;
   await loadBoard();
   return true;
 }
 
 async function deleteTask(taskId) {
-  const res = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}`, {
-    method: "DELETE",
-  });
-  if (!res.ok) {
-    await handleApiError(res);
-    return;
-  }
+  const res = await api.del(`/tasks/${encodeURIComponent(taskId)}`);
+  if (!(await ensureOk(res))) return;
   await loadBoard();
   await refreshTrashBadge();
 }
 
+// =============================================================================
+// Subtasks
+// =============================================================================
 async function fetchSubtasks(taskId) {
-  const res = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/subtasks`);
+  const res = await api.get(`/tasks/${encodeURIComponent(taskId)}/subtasks`);
   if (!res.ok) return [];
   return res.json();
 }
 
 async function addSubtask(taskId, title) {
-  const res = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/subtasks`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ title }),
-  });
-  if (!res.ok) {
-    await handleApiError(res);
-    return false;
-  }
+  const res = await api.post(`/tasks/${encodeURIComponent(taskId)}/subtasks`, { title });
+  if (!(await ensureOk(res))) return false;
   await renderDetailSubtasks(taskId);
   await loadBoard();
   return true;
 }
 
 async function toggleSubtask(taskId, subtaskId, done) {
-  const res = await fetch(
-    `${API_BASE}/tasks/${encodeURIComponent(taskId)}/subtasks/${encodeURIComponent(subtaskId)}`,
-    {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ done }),
-    }
+  const res = await api.put(
+    `/tasks/${encodeURIComponent(taskId)}/subtasks/${encodeURIComponent(subtaskId)}`,
+    { done }
   );
-  if (!res.ok) {
-    await handleApiError(res);
-    return false;
-  }
+  if (!(await ensureOk(res))) return false;
   await renderDetailSubtasks(taskId);
   await loadBoard();
   return true;
 }
 
 async function deleteSubtask(taskId, subtaskId) {
-  const res = await fetch(
-    `${API_BASE}/tasks/${encodeURIComponent(taskId)}/subtasks/${encodeURIComponent(subtaskId)}`,
-    { method: "DELETE" }
+  const res = await api.del(
+    `/tasks/${encodeURIComponent(taskId)}/subtasks/${encodeURIComponent(subtaskId)}`
   );
-  if (!res.ok) {
-    await handleApiError(res);
-    return false;
-  }
+  if (!(await ensureOk(res))) return false;
   await renderDetailSubtasks(taskId);
   await loadBoard();
   return true;
@@ -510,7 +625,7 @@ function createSubtaskItemElement(taskId, subtask) {
   const title = document.createElement("span");
   title.className = "subtask-item-title";
   title.textContent = subtask.title;
-  if (subtask.done) title.classList.add("done");
+  if (subtask.done) addClass(title, "done");
   item.appendChild(title);
 
   const deleteBtn = document.createElement("button");
@@ -526,30 +641,26 @@ function createSubtaskItemElement(taskId, subtask) {
 
 async function renderDetailSubtasks(taskId) {
   const subtasks = await fetchSubtasks(taskId);
-  detailSubtaskList.replaceChildren();
+  dom.detailSubtaskList.replaceChildren();
   for (const subtask of subtasks) {
-    detailSubtaskList.appendChild(createSubtaskItemElement(taskId, subtask));
+    dom.detailSubtaskList.appendChild(createSubtaskItemElement(taskId, subtask));
   }
   const done = subtasks.filter((s) => s.done).length;
-  detailSubtaskProgress.textContent = subtasks.length ? `${done} / ${subtasks.length}` : "";
+  dom.detailSubtaskProgress.textContent = subtasks.length ? `${done} / ${subtasks.length}` : "";
 }
 
+// =============================================================================
+// Notes
+// =============================================================================
 async function fetchNotes(taskId) {
-  const res = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/notes`);
+  const res = await api.get(`/tasks/${encodeURIComponent(taskId)}/notes`);
   if (!res.ok) return [];
   return res.json();
 }
 
 async function addNote(taskId, body) {
-  const res = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/notes`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ body }),
-  });
-  if (!res.ok) {
-    await handleApiError(res);
-    return false;
-  }
+  const res = await api.post(`/tasks/${encodeURIComponent(taskId)}/notes`, { body });
+  if (!(await ensureOk(res))) return false;
   await renderDetailNotes(taskId);
   return true;
 }
@@ -573,66 +684,108 @@ function createNoteItemElement(note) {
 
 async function renderDetailNotes(taskId) {
   const notes = await fetchNotes(taskId);
-  detailNotesList.replaceChildren();
+  dom.detailNotesList.replaceChildren();
   for (const note of notes) {
-    detailNotesList.appendChild(createNoteItemElement(note));
+    dom.detailNotesList.appendChild(createNoteItemElement(note));
   }
-  detailNotesEmptyMessage.classList.toggle("hidden", notes.length > 0);
+  toggleClass(dom.detailNotesEmptyMessage, "hidden", notes.length > 0);
 }
 
+// =============================================================================
+// Archive
+// =============================================================================
 async function archiveTask(taskId) {
-  const res = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/archive`, {
-    method: "POST",
-  });
-  if (!res.ok) {
-    await handleApiError(res);
-    return;
-  }
+  const res = await api.post(`/tasks/${encodeURIComponent(taskId)}/archive`);
+  if (!(await ensureOk(res))) return;
   await loadBoard();
   await refreshArchiveBadge();
 }
 
 async function archiveAllDone() {
-  const res = await fetch(`${API_BASE}/tasks/archive-done`, { method: "POST" });
-  if (!res.ok) {
-    await handleApiError(res);
-    return;
-  }
+  const res = await api.post("/tasks/archive-done");
+  if (!(await ensureOk(res))) return;
   await loadBoard();
   await refreshArchiveBadge();
 }
 
-function formatRelativeTime(isoString) {
-  const then = new Date(isoString).getTime();
-  const seconds = Math.max(0, Math.floor((Date.now() - then) / 1000));
-
-  if (seconds < 60) return "just now";
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
+async function fetchArchive() {
+  const res = await api.get("/archive");
+  return res.json();
 }
 
-function formatDueDate(dueDate) {
-  return new Date(dueDate).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+async function refreshArchiveBadge() {
+  const archived = await fetchArchive();
+  dom.archiveBadge.textContent = archived.length;
+  toggleClass(dom.archiveBadge, "hidden", archived.length === 0);
 }
 
-function isOverdue(dueDate, column) {
-  if (column === DONE_COLUMN) return false;
-  return new Date(dueDate).getTime() < Date.now();
+function createArchiveItemElement(item) {
+  const el = document.createElement("div");
+  el.className = "trash-item";
+
+  const header = document.createElement("div");
+  header.className = "trash-item-header";
+
+  const title = document.createElement("span");
+  title.className = "trash-item-title";
+  title.textContent = item.title;
+  header.appendChild(title);
+
+  const idTag = document.createElement("span");
+  idTag.className = "trash-item-id";
+  idTag.textContent = item.id;
+  header.appendChild(idTag);
+
+  el.appendChild(header);
+
+  const meta = document.createElement("p");
+  meta.className = "trash-item-meta";
+  meta.textContent = `Archived ${formatRelativeTime(item.archived_at)}`;
+  el.appendChild(meta);
+
+  const actions = document.createElement("div");
+  actions.className = "trash-item-actions";
+
+  const unarchiveBtn = document.createElement("button");
+  unarchiveBtn.className = "unarchive-btn";
+  unarchiveBtn.textContent = "Unarchive";
+  unarchiveBtn.addEventListener("click", () => unarchiveTask(item.id));
+  actions.appendChild(unarchiveBtn);
+
+  el.appendChild(actions);
+  return el;
 }
 
+async function renderArchive() {
+  const archived = await fetchArchive();
+  dom.archiveList.replaceChildren();
+  for (const item of archived) {
+    dom.archiveList.appendChild(createArchiveItemElement(item));
+  }
+  toggleClass(dom.archiveEmptyMessage, "hidden", archived.length > 0);
+  dom.archiveBadge.textContent = archived.length;
+  toggleClass(dom.archiveBadge, "hidden", archived.length === 0);
+}
+
+async function unarchiveTask(taskId) {
+  const res = await api.post(`/archive/${encodeURIComponent(taskId)}/unarchive`);
+  if (!(await ensureOk(res))) return;
+  await renderArchive();
+  await loadBoard();
+}
+
+// =============================================================================
+// Trash (recycle bin)
+// =============================================================================
 async function fetchTrash() {
-  const res = await fetch(`${API_BASE}/trash`);
+  const res = await api.get("/trash");
   return res.json();
 }
 
 async function refreshTrashBadge() {
   const trashed = await fetchTrash();
-  trashBadge.textContent = trashed.length;
-  trashBadge.classList.toggle("hidden", trashed.length === 0);
+  dom.trashBadge.textContent = trashed.length;
+  toggleClass(dom.trashBadge, "hidden", trashed.length === 0);
 }
 
 function createTrashItemElement(item) {
@@ -684,114 +837,38 @@ function createTrashItemElement(item) {
 
 async function renderTrash() {
   const trashed = await fetchTrash();
-  trashList.replaceChildren();
+  dom.trashList.replaceChildren();
   for (const item of trashed) {
-    trashList.appendChild(createTrashItemElement(item));
+    dom.trashList.appendChild(createTrashItemElement(item));
   }
-  trashEmptyMessage.classList.toggle("hidden", trashed.length > 0);
-  trashBadge.textContent = trashed.length;
-  trashBadge.classList.toggle("hidden", trashed.length === 0);
+  toggleClass(dom.trashEmptyMessage, "hidden", trashed.length > 0);
+  dom.trashBadge.textContent = trashed.length;
+  toggleClass(dom.trashBadge, "hidden", trashed.length === 0);
 }
 
 async function restoreTask(taskId) {
-  const res = await fetch(`${API_BASE}/trash/${encodeURIComponent(taskId)}/restore`, {
-    method: "POST",
-  });
-  if (!res.ok) {
-    await handleApiError(res);
-    return;
-  }
+  const res = await api.post(`/trash/${encodeURIComponent(taskId)}/restore`);
+  if (!(await ensureOk(res))) return;
   await renderTrash();
   await loadBoard();
 }
 
 async function permanentDeleteTask(taskId) {
-  await fetch(`${API_BASE}/trash/${encodeURIComponent(taskId)}`, { method: "DELETE" });
+  await api.del(`/trash/${encodeURIComponent(taskId)}`);
   await renderTrash();
 }
 
 async function emptyTrash() {
-  await fetch(`${API_BASE}/trash`, { method: "DELETE" });
+  await api.del("/trash");
   await renderTrash();
 }
 
-async function fetchArchive() {
-  const res = await fetch(`${API_BASE}/archive`);
-  return res.json();
-}
-
-async function refreshArchiveBadge() {
-  const archived = await fetchArchive();
-  archiveBadge.textContent = archived.length;
-  archiveBadge.classList.toggle("hidden", archived.length === 0);
-}
-
-function createArchiveItemElement(item) {
-  const el = document.createElement("div");
-  el.className = "trash-item";
-
-  const header = document.createElement("div");
-  header.className = "trash-item-header";
-
-  const title = document.createElement("span");
-  title.className = "trash-item-title";
-  title.textContent = item.title;
-  header.appendChild(title);
-
-  const idTag = document.createElement("span");
-  idTag.className = "trash-item-id";
-  idTag.textContent = item.id;
-  header.appendChild(idTag);
-
-  el.appendChild(header);
-
-  const meta = document.createElement("p");
-  meta.className = "trash-item-meta";
-  meta.textContent = `Archived ${formatRelativeTime(item.archived_at)}`;
-  el.appendChild(meta);
-
-  const actions = document.createElement("div");
-  actions.className = "trash-item-actions";
-
-  const unarchiveBtn = document.createElement("button");
-  unarchiveBtn.className = "unarchive-btn";
-  unarchiveBtn.textContent = "Unarchive";
-  unarchiveBtn.addEventListener("click", () => unarchiveTask(item.id));
-  actions.appendChild(unarchiveBtn);
-
-  el.appendChild(actions);
-  return el;
-}
-
-async function renderArchive() {
-  const archived = await fetchArchive();
-  archiveList.replaceChildren();
-  for (const item of archived) {
-    archiveList.appendChild(createArchiveItemElement(item));
-  }
-  archiveEmptyMessage.classList.toggle("hidden", archived.length > 0);
-  archiveBadge.textContent = archived.length;
-  archiveBadge.classList.toggle("hidden", archived.length === 0);
-}
-
-async function unarchiveTask(taskId) {
-  const res = await fetch(`${API_BASE}/archive/${encodeURIComponent(taskId)}/unarchive`, {
-    method: "POST",
-  });
-  if (!res.ok) {
-    await handleApiError(res);
-    return;
-  }
-  await renderArchive();
-  await loadBoard();
-}
-
+// =============================================================================
+// JSON export / import (backup / restore)
+// =============================================================================
 async function downloadExport() {
-  const res = await fetch(`${API_BASE}/export`);
-  if (!res.ok) {
-    await handleApiError(res);
-    return;
-  }
+  const res = await api.get("/export");
+  if (!(await ensureOk(res))) return;
   const data = await res.json();
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
@@ -806,8 +883,8 @@ async function downloadExport() {
 }
 
 function triggerImportPicker() {
-  importFileInput.value = "";
-  importFileInput.click();
+  dom.importFileInput.value = "";
+  dom.importFileInput.click();
 }
 
 async function importBackupFile(file) {
@@ -819,15 +896,8 @@ async function importBackupFile(file) {
     return;
   }
 
-  const res = await fetch(`${API_BASE}/import`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
-  });
-  if (!res.ok) {
-    await handleApiError(res);
-    return;
-  }
+  const res = await api.post("/import", data);
+  if (!(await ensureOk(res))) return;
 
   await refreshSprintBanner();
   await refreshLastSprintPanel();
@@ -835,50 +905,33 @@ async function importBackupFile(file) {
   await loadBoard();
 }
 
+// =============================================================================
+// Sprints
+// =============================================================================
 async function fetchActiveSprint() {
-  const res = await fetch(`${API_BASE}/sprints/active`);
+  const res = await api.get("/sprints/active");
   if (!res.ok) return null;
   return res.json();
 }
 
-function formatSprintDate(dateString) {
-  return new Date(`${dateString}T00:00:00`).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-  });
-}
-
-function formatDaysRemaining(endDateString) {
-  const end = new Date(`${endDateString}T00:00:00`);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const days = Math.round((end.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-
-  if (days > 1) return { label: `${days} days left`, overdue: false };
-  if (days === 1) return { label: "1 day left", overdue: false };
-  if (days === 0) return { label: "Ends today", overdue: false };
-  return { label: `${Math.abs(days)}d overdue`, overdue: true };
-}
-
 function renderSprintBanner(sprint) {
-  activeSprintId = sprint ? sprint.id : null;
-  activeSprint = sprint;
+  sprintState.setActive(sprint);
 
   if (!sprint) {
-    sprintBannerActive.classList.add("hidden");
-    sprintBannerInactive.classList.remove("hidden");
+    addClass(dom.sprintBannerActive, "hidden");
+    removeClass(dom.sprintBannerInactive, "hidden");
     return;
   }
 
-  sprintBannerInactive.classList.add("hidden");
-  sprintBannerActive.classList.remove("hidden");
+  addClass(dom.sprintBannerInactive, "hidden");
+  removeClass(dom.sprintBannerActive, "hidden");
 
-  sprintBannerName.textContent = sprint.name;
-  sprintBannerDates.textContent = `${formatSprintDate(sprint.start_date)} – ${formatSprintDate(sprint.end_date)}`;
+  dom.sprintBannerName.textContent = sprint.name;
+  dom.sprintBannerDates.textContent = `${formatSprintDate(sprint.start_date)} – ${formatSprintDate(sprint.end_date)}`;
 
   const { label, overdue } = formatDaysRemaining(sprint.end_date);
-  sprintBannerDays.textContent = label;
-  sprintBannerDays.classList.toggle("overdue", overdue);
+  dom.sprintBannerDays.textContent = label;
+  toggleClass(dom.sprintBannerDays, "overdue", overdue);
 }
 
 async function refreshSprintBanner() {
@@ -887,15 +940,8 @@ async function refreshSprintBanner() {
 }
 
 async function startSprint(name, durationWeeks) {
-  const res = await fetch(`${API_BASE}/sprints/start`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, duration_weeks: durationWeeks }),
-  });
-  if (!res.ok) {
-    await handleApiError(res);
-    return false;
-  }
+  const res = await api.post("/sprints/start", { name, duration_weeks: durationWeeks });
+  if (!(await ensureOk(res))) return false;
   await refreshSprintBanner();
   await refreshNextSprintPanel();
   await loadBoard();
@@ -903,15 +949,8 @@ async function startSprint(name, durationWeeks) {
 }
 
 async function endSprint(nextName, nextDurationWeeks) {
-  const res = await fetch(`${API_BASE}/sprints/end`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name: nextName, duration_weeks: nextDurationWeeks }),
-  });
-  if (!res.ok) {
-    await handleApiError(res);
-    return false;
-  }
+  const res = await api.post("/sprints/end", { name: nextName, duration_weeks: nextDurationWeeks });
+  if (!(await ensureOk(res))) return false;
   await refreshSprintBanner();
   await refreshLastSprintPanel();
   await refreshNextSprintPanel();
@@ -922,21 +961,21 @@ async function endSprint(nextName, nextDurationWeeks) {
 function openSprintModal(mode) {
   sprintModalMode = mode;
   const ending = mode === "end";
-  sprintModalTitle.textContent = ending ? "End Sprint & Start Next" : "Start Sprint";
-  sprintModalSubmitBtn.textContent = ending ? "End & Start Next" : "Start Sprint";
-  sprintModalHint.classList.toggle("hidden", !ending);
-  sprintNameInput.value = "";
-  sprintDurationSelect.value = "2";
-  sprintModalOverlay.classList.add("open");
-  sprintNameInput.focus();
+  dom.sprintModalTitle.textContent = ending ? "End Sprint & Start Next" : "Start Sprint";
+  dom.sprintModalSubmitBtn.textContent = ending ? "End & Start Next" : "Start Sprint";
+  toggleClass(dom.sprintModalHint, "hidden", !ending);
+  dom.sprintNameInput.value = "";
+  dom.sprintDurationSelect.value = DEFAULT_SPRINT_DURATION;
+  openOverlay(dom.sprintModalOverlay);
+  dom.sprintNameInput.focus();
 }
 
 function closeSprintModal() {
-  sprintModalOverlay.classList.remove("open");
+  closeOverlay(dom.sprintModalOverlay);
 }
 
 async function fetchPastSprints() {
-  const res = await fetch(`${API_BASE}/sprints`);
+  const res = await api.get("/sprints");
   if (!res.ok) return [];
   return res.json();
 }
@@ -987,44 +1026,44 @@ async function renderPastSprints() {
   // The most-recently-closed sprint already has its own dedicated "Last Sprint" panel on
   // the board -- this modal is for everything older than that, so skip it here.
   const olderSprints = pastSprints.slice(1);
-  pastSprintsList.replaceChildren();
+  dom.pastSprintsList.replaceChildren();
   for (const sprint of olderSprints) {
-    pastSprintsList.appendChild(createPastSprintItemElement(sprint));
+    dom.pastSprintsList.appendChild(createPastSprintItemElement(sprint));
   }
-  pastSprintsEmptyMessage.classList.toggle("hidden", olderSprints.length > 0);
+  toggleClass(dom.pastSprintsEmptyMessage, "hidden", olderSprints.length > 0);
 }
 
 function openPastSprintsModal() {
-  pastSprintsModalOverlay.classList.add("open");
+  openOverlay(dom.pastSprintsModalOverlay);
   renderPastSprints();
 }
 
 function closePastSprintsModal() {
-  pastSprintsModalOverlay.classList.remove("open");
+  closeOverlay(dom.pastSprintsModalOverlay);
 }
 
 function renderLastSprintPanel(sprint) {
-  lastSprintBody.replaceChildren();
+  dom.lastSprintBody.replaceChildren();
 
   if (!sprint) {
     const empty = document.createElement("p");
     empty.className = "sprint-panel-empty-message";
     empty.textContent = "No closed sprints yet.";
-    lastSprintBody.appendChild(empty);
-    lastSprintSummaryInfo.textContent = "No closed sprints yet";
+    dom.lastSprintBody.appendChild(empty);
+    dom.lastSprintSummaryInfo.textContent = "No closed sprints yet";
     return;
   }
 
-  lastSprintBody.appendChild(createPastSprintItemElement(sprint, { showHeader: false }));
+  dom.lastSprintBody.appendChild(createPastSprintItemElement(sprint, { showHeader: false }));
 
-  lastSprintSummaryInfo.replaceChildren();
+  dom.lastSprintSummaryInfo.replaceChildren();
   const name = document.createElement("span");
   name.className = "sprint-panel-summary-name";
   name.textContent = sprint.name;
   const dates = document.createElement("span");
   dates.className = "sprint-panel-summary-dates";
   dates.textContent = `${formatSprintDate(sprint.start_date)} – ${formatSprintDate(sprint.end_date)}`;
-  lastSprintSummaryInfo.append(name, dates);
+  dom.lastSprintSummaryInfo.append(name, dates);
 }
 
 async function refreshLastSprintPanel() {
@@ -1035,40 +1074,40 @@ async function refreshLastSprintPanel() {
 }
 
 async function fetchPlannedSprint() {
-  const res = await fetch(`${API_BASE}/sprints/planned`);
+  const res = await api.get("/sprints/planned");
   if (!res.ok) return null;
   return res.json();
 }
 
 function renderNextSprintPanel(sprint) {
-  plannedSprint = sprint;
+  sprintState.setPlanned(sprint);
 
   if (sprint) {
-    nextSprintPlanned.classList.remove("hidden");
-    nextSprintEmptyMessage.classList.add("hidden");
-    planSprintForm.classList.add("hidden");
-    nextSprintName.textContent = sprint.name;
-    nextSprintDuration.textContent =
+    removeClass(dom.nextSprintPlanned, "hidden");
+    addClass(dom.nextSprintEmptyMessage, "hidden");
+    addClass(dom.planSprintForm, "hidden");
+    dom.nextSprintName.textContent = sprint.name;
+    dom.nextSprintDuration.textContent =
       sprint.duration_weeks === 1 ? "1 week" : `${sprint.duration_weeks} weeks`;
     // A planned sprint has no real start_date yet (see storage.plan_next_sprint) -- it's only
     // computed at promotion time, from whatever day End Sprint actually gets clicked. This is
     // just a preview based on the current sprint's end_date, not a stored commitment: if the
     // current sprint ends earlier or later than its own end_date, the real promoted start_date
     // will differ from this estimate accordingly.
-    nextSprintAnticipated.textContent =
-      activeSprint && activeSprint.end_date
-        ? `Starts ~${formatSprintDate(activeSprint.end_date)} (estimated)`
+    dom.nextSprintAnticipated.textContent =
+      sprintState.active && sprintState.active.end_date
+        ? `Starts ~${formatSprintDate(sprintState.active.end_date)} (estimated)`
         : "";
-    nextSprintSummaryInfo.textContent = sprint.name;
+    dom.nextSprintSummaryInfo.textContent = sprint.name;
     return;
   }
 
-  nextSprintPlanned.classList.add("hidden");
-  nextSprintEmptyMessage.classList.remove("hidden");
-  nextSprintSummaryInfo.textContent = "Nothing planned yet";
+  addClass(dom.nextSprintPlanned, "hidden");
+  removeClass(dom.nextSprintEmptyMessage, "hidden");
+  dom.nextSprintSummaryInfo.textContent = "Nothing planned yet";
   // The plan control only makes sense while a sprint is active -- there's no "next" to queue
   // up otherwise.
-  planSprintForm.classList.toggle("hidden", activeSprintId === null);
+  toggleClass(dom.planSprintForm, "hidden", sprintState.activeId === null);
 }
 
 async function refreshNextSprintPanel() {
@@ -1077,23 +1116,19 @@ async function refreshNextSprintPanel() {
 }
 
 async function planNextSprint(name, durationWeeks) {
-  const res = await fetch(`${API_BASE}/sprints/plan`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, duration_weeks: durationWeeks }),
-  });
-  if (!res.ok) {
-    await handleApiError(res);
-    return false;
-  }
+  const res = await api.post("/sprints/plan", { name, duration_weeks: durationWeeks });
+  if (!(await ensureOk(res))) return false;
   await refreshNextSprintPanel();
   return true;
 }
 
+// =============================================================================
+// Filters
+// =============================================================================
 function applyFilters() {
-  const query = filterSearchInput.value.trim().toLowerCase();
-  const priority = filterPrioritySelect.value;
-  const blockedOnly = filterBlockedOnlyInput.checked;
+  const query = dom.filterSearchInput.value.trim().toLowerCase();
+  const priority = dom.filterPrioritySelect.value;
+  const blockedOnly = dom.filterBlockedOnlyInput.checked;
   const active = Boolean(query || priority || blockedOnly);
 
   for (const column of COLUMNS) {
@@ -1107,108 +1142,114 @@ function applyFilters() {
       const matchesPriority = !priority || card.dataset.priority === priority;
       const matchesBlocked = !blockedOnly || card.dataset.blocked === "true";
       const matches = matchesQuery && matchesPriority && matchesBlocked;
-      card.classList.toggle("filtered-out", !matches);
+      toggleClass(card, "filtered-out", !matches);
       if (matches) visibleCount += 1;
     });
 
     countEl.textContent = active ? `${visibleCount}/${cards.length}` : `${cards.length}`;
   }
 
-  filterClearBtn.classList.toggle("hidden", !active);
+  toggleClass(dom.filterClearBtn, "hidden", !active);
 }
 
 function clearFilters() {
-  filterSearchInput.value = "";
-  filterPrioritySelect.value = "";
-  filterBlockedOnlyInput.checked = false;
+  dom.filterSearchInput.value = "";
+  dom.filterPrioritySelect.value = "";
+  dom.filterBlockedOnlyInput.checked = false;
   applyFilters();
 }
 
+// =============================================================================
+// Modal open/close (task-create, task-detail, trash, archive, confirm)
+// =============================================================================
 function openTrashModal() {
-  trashModalOverlay.classList.add("open");
+  openOverlay(dom.trashModalOverlay);
   renderTrash();
 }
 
 function closeTrashModal() {
-  trashModalOverlay.classList.remove("open");
+  closeOverlay(dom.trashModalOverlay);
 }
 
 function openArchiveModal() {
-  archiveModalOverlay.classList.add("open");
+  openOverlay(dom.archiveModalOverlay);
   renderArchive();
 }
 
 function closeArchiveModal() {
-  archiveModalOverlay.classList.remove("open");
+  closeOverlay(dom.archiveModalOverlay);
 }
 
 function confirmAction(message, onConfirm) {
-  confirmMessage.textContent = message;
+  dom.confirmMessage.textContent = message;
   pendingConfirmAction = onConfirm;
-  confirmModalOverlay.classList.add("open");
+  openOverlay(dom.confirmModalOverlay);
 }
 
 function closeConfirmModal() {
-  confirmModalOverlay.classList.remove("open");
+  closeOverlay(dom.confirmModalOverlay);
   pendingConfirmAction = null;
 }
 
 function updateBlockedByVisibility() {
-  const canBlock = columnSelect.value !== DONE_COLUMN;
-  blockedByField.classList.toggle("hidden", !canBlock);
+  const canBlock = dom.columnSelect.value !== DONE_COLUMN;
+  toggleClass(dom.blockedByField, "hidden", !canBlock);
 }
 
 function openModal(column) {
-  columnSelect.value = column;
-  titleInput.value = "";
-  descriptionInput.value = "";
-  priorityInput.value = DEFAULT_PRIORITY;
-  blockedByInput.value = "";
-  dueDateInput.value = "";
+  dom.columnSelect.value = column;
+  dom.titleInput.value = "";
+  dom.descriptionInput.value = "";
+  dom.priorityInput.value = DEFAULT_PRIORITY;
+  dom.blockedByInput.value = "";
+  dom.dueDateInput.value = "";
   updateBlockedByVisibility();
-  modalOverlay.classList.add("open");
-  titleInput.focus();
+  openOverlay(dom.modalOverlay);
+  dom.titleInput.focus();
 }
 
 function closeModal() {
-  modalOverlay.classList.remove("open");
+  closeOverlay(dom.modalOverlay);
 }
 
 function openTaskDetail(column, task) {
   currentDetailTask = { id: task.id, column };
 
-  detailId.textContent = task.id;
-  detailTitle.textContent = task.title;
-  detailDescription.textContent = task.description || "No description.";
+  dom.detailId.textContent = task.id;
+  dom.detailTitle.textContent = task.title;
+  dom.detailDescription.textContent = task.description || "No description.";
 
-  detailTags.replaceChildren();
+  dom.detailTags.replaceChildren();
   if (task.blocks && task.blocks.length) {
     const tag = document.createElement("span");
     tag.className = "card-tag blocks";
     tag.textContent = `Blocks ${task.blocks.join(", ")}`;
-    detailTags.appendChild(tag);
+    dom.detailTags.appendChild(tag);
   }
 
   const canBlock = column !== DONE_COLUMN;
-  detailBlockedByField.classList.toggle("hidden", !canBlock);
-  detailSaveBtn.classList.toggle("hidden", !canBlock);
-  detailBlockedByInput.value = task.blocked_by || "";
-  detailDueDateInput.value = task.due_date ? task.due_date.slice(0, 10) : "";
+  toggleClass(dom.detailBlockedByField, "hidden", !canBlock);
+  toggleClass(dom.detailSaveBtn, "hidden", !canBlock);
+  dom.detailBlockedByInput.value = task.blocked_by || "";
+  dom.detailDueDateInput.value = task.due_date ? task.due_date.slice(0, 10) : "";
 
-  detailSubtaskInput.value = "";
+  dom.detailSubtaskInput.value = "";
   renderDetailSubtasks(task.id);
 
-  detailNoteInput.value = "";
+  dom.detailNoteInput.value = "";
   renderDetailNotes(task.id);
 
-  taskDetailModalOverlay.classList.add("open");
+  openOverlay(dom.taskDetailModalOverlay);
 }
 
 function closeTaskDetail() {
-  taskDetailModalOverlay.classList.remove("open");
+  closeOverlay(dom.taskDetailModalOverlay);
   currentDetailTask = null;
 }
 
+// =============================================================================
+// Event wiring
+// =============================================================================
 document.querySelectorAll(".add-task-btn").forEach((btn) => {
   btn.addEventListener("click", () => openModal(btn.dataset.column));
 });
@@ -1228,98 +1269,70 @@ document.querySelectorAll(".wip-limit-input").forEach((input) => {
   });
 });
 
-document.getElementById("modal-cancel").addEventListener("click", closeModal);
-columnSelect.addEventListener("change", updateBlockedByVisibility);
+wireOverlayDismiss(dom.modalOverlay, closeModal, dom.modalCancelBtn);
+dom.columnSelect.addEventListener("change", updateBlockedByVisibility);
 
-modalOverlay.addEventListener("click", (event) => {
-  if (event.target === modalOverlay) closeModal();
-});
+wireOverlayDismiss(dom.taskDetailModalOverlay, closeTaskDetail, dom.taskDetailCloseBtn);
 
-taskDetailCloseBtn.addEventListener("click", closeTaskDetail);
-
-taskDetailModalOverlay.addEventListener("click", (event) => {
-  if (event.target === taskDetailModalOverlay) closeTaskDetail();
-});
-
-themeToggle.addEventListener("click", () => {
+dom.themeToggle.addEventListener("click", () => {
   const root = document.documentElement;
   const next = root.dataset.theme === "dark" ? "light" : "dark";
   root.dataset.theme = next;
-  localStorage.setItem("canban-theme", next);
+  localStorage.setItem(THEME_STORAGE_KEY, next);
 });
 
-exportFab.addEventListener("click", downloadExport);
+dom.exportFab.addEventListener("click", downloadExport);
 
-importFab.addEventListener("click", triggerImportPicker);
-importFileInput.addEventListener("change", () => {
-  const file = importFileInput.files[0];
+dom.importFab.addEventListener("click", triggerImportPicker);
+dom.importFileInput.addEventListener("change", () => {
+  const file = dom.importFileInput.files[0];
   if (!file) return;
   confirmAction(`Import "${file.name}"? This adds its tasks/sprints to the current board.`, () =>
     importBackupFile(file)
   );
 });
 
-trashFab.addEventListener("click", openTrashModal);
-trashModalClose.addEventListener("click", closeTrashModal);
+wireOverlayDismiss(dom.trashModalOverlay, closeTrashModal, dom.trashModalClose);
+dom.trashFab.addEventListener("click", openTrashModal);
 
-trashModalOverlay.addEventListener("click", (event) => {
-  if (event.target === trashModalOverlay) closeTrashModal();
-});
-
-emptyTrashBtn.addEventListener("click", () => {
+dom.emptyTrashBtn.addEventListener("click", () => {
   confirmAction("Permanently delete every task in the recycle bin? This can't be undone.", emptyTrash);
 });
 
-archiveAllBtn.addEventListener("click", archiveAllDone);
+dom.archiveAllBtn.addEventListener("click", archiveAllDone);
 
-archiveFab.addEventListener("click", openArchiveModal);
-archiveModalClose.addEventListener("click", closeArchiveModal);
+wireOverlayDismiss(dom.archiveModalOverlay, closeArchiveModal, dom.archiveModalClose);
+dom.archiveFab.addEventListener("click", openArchiveModal);
 
-archiveModalOverlay.addEventListener("click", (event) => {
-  if (event.target === archiveModalOverlay) closeArchiveModal();
-});
+wireOverlayDismiss(dom.confirmModalOverlay, closeConfirmModal, dom.confirmCancelBtn);
 
-confirmCancelBtn.addEventListener("click", closeConfirmModal);
-
-confirmConfirmBtn.addEventListener("click", async () => {
+dom.confirmConfirmBtn.addEventListener("click", async () => {
   const action = pendingConfirmAction;
   closeConfirmModal();
   if (action) await action();
 });
 
-confirmModalOverlay.addEventListener("click", (event) => {
-  if (event.target === confirmModalOverlay) closeConfirmModal();
-});
-
-startSprintBtn.addEventListener("click", () => openSprintModal("start"));
-endSprintBtn.addEventListener("click", async () => {
+dom.startSprintBtn.addEventListener("click", () => openSprintModal("start"));
+dom.endSprintBtn.addEventListener("click", async () => {
   // If a sprint has already been explicitly planned via the "Plan Next Sprint" control, end
   // it straight away -- the name/duration prompt is only the fallback for when nothing is
   // queued up yet.
-  if (plannedSprint) {
+  if (sprintState.planned) {
     await endSprint(null, null);
     return;
   }
   openSprintModal("end");
 });
-sprintModalCancelBtn.addEventListener("click", closeSprintModal);
+wireOverlayDismiss(dom.sprintModalOverlay, closeSprintModal, dom.sprintModalCancelBtn);
 
-sprintModalOverlay.addEventListener("click", (event) => {
-  if (event.target === sprintModalOverlay) closeSprintModal();
-});
+wireOverlayDismiss(dom.pastSprintsModalOverlay, closePastSprintsModal, dom.pastSprintsModalClose);
+dom.pastSprintsFab.addEventListener("click", openPastSprintsModal);
 
-pastSprintsFab.addEventListener("click", openPastSprintsModal);
-pastSprintsModalClose.addEventListener("click", closePastSprintsModal);
-
-pastSprintsModalOverlay.addEventListener("click", (event) => {
-  if (event.target === pastSprintsModalOverlay) closePastSprintsModal();
-});
-
-sprintForm.addEventListener("submit", async (event) => {
+dom.sprintForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  const name = sprintNameInput.value.trim();
+  const name = dom.sprintNameInput.value.trim();
   if (!name) return;
-  const durationWeeks = parseInt(sprintDurationSelect.value, 10);
+  const durationWeeks = parseInt(dom.sprintDurationSelect.value, 10);
   const ok =
     sprintModalMode === "end"
       ? await endSprint(name, durationWeeks)
@@ -1327,54 +1340,54 @@ sprintForm.addEventListener("submit", async (event) => {
   if (ok) closeSprintModal();
 });
 
-planSprintForm.addEventListener("submit", async (event) => {
+dom.planSprintForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  const name = planSprintNameInput.value.trim();
+  const name = dom.planSprintNameInput.value.trim();
   if (!name) return;
-  const durationWeeks = parseInt(planSprintDurationSelect.value, 10);
+  const durationWeeks = parseInt(dom.planSprintDurationSelect.value, 10);
   const ok = await planNextSprint(name, durationWeeks);
   if (ok) {
-    planSprintForm.reset();
-    planSprintDurationSelect.value = "2";
+    dom.planSprintForm.reset();
+    dom.planSprintDurationSelect.value = DEFAULT_SPRINT_DURATION;
   }
 });
 
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape") return;
-  if (confirmModalOverlay.classList.contains("open")) closeConfirmModal();
-  else if (taskDetailModalOverlay.classList.contains("open")) closeTaskDetail();
-  else if (trashModalOverlay.classList.contains("open")) closeTrashModal();
-  else if (archiveModalOverlay.classList.contains("open")) closeArchiveModal();
-  else if (sprintModalOverlay.classList.contains("open")) closeSprintModal();
-  else if (pastSprintsModalOverlay.classList.contains("open")) closePastSprintsModal();
-  else if (modalOverlay.classList.contains("open")) closeModal();
+  if (isOverlayOpen(dom.confirmModalOverlay)) closeConfirmModal();
+  else if (isOverlayOpen(dom.taskDetailModalOverlay)) closeTaskDetail();
+  else if (isOverlayOpen(dom.trashModalOverlay)) closeTrashModal();
+  else if (isOverlayOpen(dom.archiveModalOverlay)) closeArchiveModal();
+  else if (isOverlayOpen(dom.sprintModalOverlay)) closeSprintModal();
+  else if (isOverlayOpen(dom.pastSprintsModalOverlay)) closePastSprintsModal();
+  else if (isOverlayOpen(dom.modalOverlay)) closeModal();
 });
 
-taskForm.addEventListener("submit", async (event) => {
+dom.taskForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  const title = titleInput.value.trim();
+  const title = dom.titleInput.value.trim();
   if (!title) return;
   const ok = await createTask(
-    columnSelect.value,
+    dom.columnSelect.value,
     title,
-    descriptionInput.value.trim(),
-    blockedByInput.value.trim(),
-    priorityInput.value,
-    dueDateInput.value
+    dom.descriptionInput.value.trim(),
+    dom.blockedByInput.value.trim(),
+    dom.priorityInput.value,
+    dom.dueDateInput.value
   );
   if (ok) closeModal();
 });
 
 async function submitDetailSubtask() {
   if (!currentDetailTask) return;
-  const title = detailSubtaskInput.value.trim();
+  const title = dom.detailSubtaskInput.value.trim();
   if (!title) return;
   const ok = await addSubtask(currentDetailTask.id, title);
-  if (ok) detailSubtaskInput.value = "";
+  if (ok) dom.detailSubtaskInput.value = "";
 }
 
-detailSubtaskAddBtn.addEventListener("click", submitDetailSubtask);
-detailSubtaskInput.addEventListener("keydown", (event) => {
+dom.detailSubtaskAddBtn.addEventListener("click", submitDetailSubtask);
+dom.detailSubtaskInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter") {
     event.preventDefault();
     submitDetailSubtask();
@@ -1383,40 +1396,40 @@ detailSubtaskInput.addEventListener("keydown", (event) => {
 
 async function submitDetailNote() {
   if (!currentDetailTask) return;
-  const body = detailNoteInput.value.trim();
+  const body = dom.detailNoteInput.value.trim();
   if (!body) return;
   const ok = await addNote(currentDetailTask.id, body);
-  if (ok) detailNoteInput.value = "";
+  if (ok) dom.detailNoteInput.value = "";
 }
 
-detailNoteAddBtn.addEventListener("click", submitDetailNote);
+dom.detailNoteAddBtn.addEventListener("click", submitDetailNote);
 
-taskDetailForm.addEventListener("submit", async (event) => {
+dom.taskDetailForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   if (!currentDetailTask) return;
-  const blockedBy = detailBlockedByInput.value.trim();
+  const blockedBy = dom.detailBlockedByInput.value.trim();
   const blockedByOk = await setBlockedBy(currentDetailTask.id, blockedBy || null);
   if (!blockedByOk) return;
-  const dueDateOk = await setDueDate(currentDetailTask.id, detailDueDateInput.value || null);
+  const dueDateOk = await setDueDate(currentDetailTask.id, dom.detailDueDateInput.value || null);
   if (dueDateOk) closeTaskDetail();
 });
 
-filterSearchInput.addEventListener("input", applyFilters);
-filterPrioritySelect.addEventListener("change", applyFilters);
-filterBlockedOnlyInput.addEventListener("change", applyFilters);
-filterClearBtn.addEventListener("click", clearFilters);
+dom.filterSearchInput.addEventListener("input", applyFilters);
+dom.filterPrioritySelect.addEventListener("change", applyFilters);
+dom.filterBlockedOnlyInput.addEventListener("change", applyFilters);
+dom.filterClearBtn.addEventListener("click", clearFilters);
 
 document.querySelectorAll(".task-list").forEach((list) => {
   list.addEventListener("dragover", (event) => {
     event.preventDefault();
-    list.classList.add("drag-over");
+    addClass(list, "drag-over");
   });
   list.addEventListener("dragleave", () => {
-    list.classList.remove("drag-over");
+    removeClass(list, "drag-over");
   });
   list.addEventListener("drop", (event) => {
     event.preventDefault();
-    list.classList.remove("drag-over");
+    removeClass(list, "drag-over");
     const dragging = document.querySelector(".card.dragging");
     if (!dragging) return;
 
@@ -1429,6 +1442,9 @@ document.querySelectorAll(".task-list").forEach((list) => {
   });
 });
 
+// =============================================================================
+// Initial load
+// =============================================================================
 refreshSprintBanner().then(() => {
   refreshNextSprintPanel();
   loadBoard();
