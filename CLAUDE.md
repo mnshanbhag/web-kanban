@@ -27,7 +27,15 @@ key for what's proposed/in-progress/shipped/shelved.
   API returns, not just what it accepts.
 - `backend/main.py` — FastAPI app. REST endpoints under `/api/tasks`, CORS wide open
   (`allow_origins=["*"]`, fine for a local-only app). Mounts `frontend/` as static files at `/`
-  (must stay mounted *last* so it doesn't shadow the API routes).
+  (must stay mounted *last* so it doesn't shadow the API routes). Endpoints do **not** write their
+  own `try`/`except HTTPException` blocks: storage raises plain exception types and the
+  `@storage_errors` decorator maps them centrally (`FileNotFoundError` → 404, `FileExistsError` →
+  409, `ValueError` → 400, per `_EXC_STATUS`). Apply it *below* the `@app.<method>` decorator so
+  FastAPI still sees the route function; `functools.wraps` sets `__wrapped__`, which is what lets
+  FastAPI's `inspect.signature` call resolve the real parameters through the wrapper. The wrapper
+  is **sync-only** — every endpoint here is a plain `def`. An `async def` endpoint would return a
+  coroutine that escapes the `try` unawaited and its exceptions would sail past the mapping; give
+  it its own async wrapper rather than assuming this one covers it.
 - Tasks have a real, stable unique ID assigned once at creation, exposed over the API as
   `"KAN-01"`, `"KAN-02"`, ... (`storage._display_id(pk)` / `storage._parse_id(task_id)` convert
   between the display string and the real integer primary key). **IDs are never reused** — this

@@ -1,3 +1,4 @@
+from functools import wraps
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -49,6 +50,29 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Storage functions raise plain exception types; every endpoint that calls them
+# maps the same three to HTTP status codes. This decorator centralizes that
+# mapping so handlers can call storage directly and just return. Ordered
+# most-specific first so an isinstance match picks the right code (the three
+# types are unrelated in practice, so order only guards against subclasses).
+_EXC_STATUS = (
+    (FileNotFoundError, 404),
+    (FileExistsError, 409),
+    (ValueError, 400),
+)
+
+
+def storage_errors(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except tuple(exc_type for exc_type, _ in _EXC_STATUS) as exc:
+            status = next(code for exc_type, code in _EXC_STATUS if isinstance(exc, exc_type))
+            raise HTTPException(status_code=status, detail=str(exc)) from exc
+
+    return wrapper
+
 
 @app.get("/api/status")
 def get_status():
@@ -61,141 +85,93 @@ def list_tasks():
 
 
 @app.post("/api/tasks", status_code=201, response_model=IdResponse)
+@storage_errors
 def create_task(task: TaskCreate):
-    try:
-        task_id = storage.add_task(
-            task.column,
-            task.title,
-            task.description,
-            task.blocked_by,
-            task.priority,
-            task.due_date,
-        )
-    except FileExistsError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    task_id = storage.add_task(
+        task.column,
+        task.title,
+        task.description,
+        task.blocked_by,
+        task.priority,
+        task.due_date,
+    )
     return {"id": task_id}
 
 
 @app.put("/api/tasks/{task_id}/priority", response_model=PriorityResponse)
+@storage_errors
 def set_priority(task_id: str, body: TaskPriorityUpdate):
-    try:
-        storage.update_task(task_id, new_priority=body.priority)
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    storage.update_task(task_id, new_priority=body.priority)
     return {"id": task_id, "priority": body.priority}
 
 
 @app.put("/api/tasks/{task_id}/move", response_model=IdResponse)
+@storage_errors
 def move_task(task_id: str, move: TaskMove):
-    try:
-        storage.move_task(task_id, move.to_column)
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except FileExistsError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    storage.move_task(task_id, move.to_column)
     return {"id": task_id}
 
 
 @app.put("/api/tasks/{task_id}/blocked-by", response_model=BlockedByResponse)
+@storage_errors
 def set_blocked_by(task_id: str, body: TaskBlockedByUpdate):
-    try:
-        storage.set_blocked_by(task_id, body.blocked_by)
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    storage.set_blocked_by(task_id, body.blocked_by)
     return {"id": task_id, "blocked_by": body.blocked_by}
 
 
 @app.put("/api/tasks/{task_id}/due-date", response_model=DueDateResponse)
+@storage_errors
 def set_due_date(task_id: str, body: TaskDueDateUpdate):
-    try:
-        storage.set_due_date(task_id, body.due_date)
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    storage.set_due_date(task_id, body.due_date)
     return {"id": task_id, "due_date": body.due_date}
 
 
 @app.delete("/api/tasks/{task_id}", status_code=204)
+@storage_errors
 def delete_task(task_id: str):
-    try:
-        storage.delete_task(task_id)
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    storage.delete_task(task_id)
 
 
 @app.get("/api/tasks/{task_id}/subtasks", response_model=list[SubtaskOut])
+@storage_errors
 def list_subtasks(task_id: str):
-    try:
-        return storage.get_subtasks(task_id)
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return storage.get_subtasks(task_id)
 
 
 @app.post("/api/tasks/{task_id}/subtasks", status_code=201, response_model=SubtaskOut)
+@storage_errors
 def create_subtask(task_id: str, body: SubtaskCreate):
-    try:
-        return storage.add_subtask(task_id, body.title)
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return storage.add_subtask(task_id, body.title)
 
 
 @app.put("/api/tasks/{task_id}/subtasks/{subtask_id}", response_model=SubtaskOut)
+@storage_errors
 def update_subtask(task_id: str, subtask_id: int, body: SubtaskUpdate):
-    try:
-        return storage.update_subtask(task_id, subtask_id, body.title, body.done)
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return storage.update_subtask(task_id, subtask_id, body.title, body.done)
 
 
 @app.delete("/api/tasks/{task_id}/subtasks/{subtask_id}", status_code=204)
+@storage_errors
 def delete_subtask(task_id: str, subtask_id: int):
-    try:
-        storage.delete_subtask(task_id, subtask_id)
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    storage.delete_subtask(task_id, subtask_id)
 
 
 @app.get("/api/tasks/{task_id}/notes", response_model=list[NoteOut])
+@storage_errors
 def list_notes(task_id: str):
-    try:
-        return storage.get_notes(task_id)
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return storage.get_notes(task_id)
 
 
 @app.post("/api/tasks/{task_id}/notes", status_code=201, response_model=NoteOut)
+@storage_errors
 def create_note(task_id: str, body: NoteCreate):
-    try:
-        return storage.add_note(task_id, body.body)
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return storage.add_note(task_id, body.body)
 
 
 @app.post("/api/tasks/{task_id}/archive", response_model=IdResponse)
+@storage_errors
 def archive_task(task_id: str):
-    try:
-        storage.archive_task(task_id)
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    storage.archive_task(task_id)
     return {"id": task_id}
 
 
@@ -211,22 +187,16 @@ def list_trash():
 
 
 @app.post("/api/trash/{task_id}/restore", response_model=RestoreResponse)
+@storage_errors
 def restore_task(task_id: str):
-    try:
-        column = storage.restore_task(task_id)
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except FileExistsError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    column = storage.restore_task(task_id)
     return {"id": task_id, "column": column}
 
 
 @app.delete("/api/trash/{task_id}", status_code=204)
+@storage_errors
 def permanent_delete_task(task_id: str):
-    try:
-        storage.permanent_delete_task(task_id)
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    storage.permanent_delete_task(task_id)
 
 
 @app.delete("/api/trash", response_model=EmptyTrashResponse)
@@ -241,13 +211,9 @@ def list_archive():
 
 
 @app.post("/api/archive/{task_id}/unarchive", response_model=IdResponse)
+@storage_errors
 def unarchive_task(task_id: str):
-    try:
-        storage.unarchive_task(task_id)
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except FileExistsError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    storage.unarchive_task(task_id)
     return {"id": task_id}
 
 
@@ -269,33 +235,21 @@ def export_data():
 
 
 @app.post("/api/import", response_model=ImportResult)
+@storage_errors
 def import_data(body: ExportOut):
-    try:
-        return storage.import_data(body.model_dump())
-    except FileExistsError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return storage.import_data(body.model_dump())
 
 
 @app.post("/api/sprints/start", response_model=SprintOut)
+@storage_errors
 def start_sprint(body: SprintStart):
-    try:
-        return storage.start_sprint(body.name, body.duration_weeks)
-    except FileExistsError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return storage.start_sprint(body.name, body.duration_weeks)
 
 
 @app.post("/api/sprints/end", response_model=SprintOut)
+@storage_errors
 def end_sprint(body: SprintEnd):
-    try:
-        return storage.end_sprint(body.name, body.duration_weeks)
-    except FileExistsError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return storage.end_sprint(body.name, body.duration_weeks)
 
 
 @app.get("/api/sprints/active", response_model=Optional[SprintOut])
@@ -304,13 +258,9 @@ def get_active_sprint():
 
 
 @app.post("/api/sprints/plan", response_model=SprintOut)
+@storage_errors
 def plan_next_sprint(body: SprintPlan):
-    try:
-        return storage.plan_next_sprint(body.name, body.duration_weeks)
-    except FileExistsError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return storage.plan_next_sprint(body.name, body.duration_weeks)
 
 
 @app.get("/api/sprints/planned", response_model=Optional[SprintOut])
