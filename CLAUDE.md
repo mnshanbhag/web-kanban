@@ -20,14 +20,30 @@ key for what's proposed/in-progress/shipped/shelved.
   `update_task`, `move_task`, `delete_task`, `get_trash`, `restore_task`,
   `permanent_delete_task`, `empty_trash`. Each function opens its own `Session` via `_session()`
   (which lazily creates the engine/DB file and runs `create_all` — cheap and idempotent, fine for
-  a local single-user app; don't bother caching the engine).
+  a local single-user app; don't bother caching the engine). The recurring lifecycle conditions
+  are centralized as filter-predicate helpers returning tuples meant to be splatted into a query:
+  `_active_task_filters()` (board-visible: neither trashed nor archived), `_not_trashed_filters()`,
+  `_trashed_task_filters()`, `_archived_task_filters()`, plus `_active_sprint_row(session)` /
+  `_planned_sprint_row(session)` for the at-most-one-active/planned lookups. Use these rather than
+  re-inlining `Task.deleted_at.is_(None)` etc. — the point is that "what counts as active" has one
+  definition. Nullable timestamp columns serialize through `_utc_isoformat_or_none` (datetimes,
+  which need the tzinfo re-attached — see the SQLite gotcha below) or `_date_isoformat_or_none`
+  (plain `Date` columns, which don't).
 - `backend/schemas.py` — Pydantic request/response models (`TaskCreate`, `TaskMove`,
   `TaskPriorityUpdate`, `TaskOut`, `TrashedTaskOut`, etc.), imported by `main.py` and wired up via
   FastAPI's `response_model=` on every endpoint — this is what actually validates/shapes what the
   API returns, not just what it accepts.
 - `backend/main.py` — FastAPI app. REST endpoints under `/api/tasks`, CORS wide open
   (`allow_origins=["*"]`, fine for a local-only app). Mounts `frontend/` as static files at `/`
-  (must stay mounted *last* so it doesn't shadow the API routes).
+  (must stay mounted *last* so it doesn't shadow the API routes). Endpoints do **not** write their
+  own `try`/`except HTTPException` blocks: storage raises plain exception types and the
+  `@storage_errors` decorator maps them centrally (`FileNotFoundError` → 404, `FileExistsError` →
+  409, `ValueError` → 400, per `_EXC_STATUS`). Apply it *below* the `@app.<method>` decorator so
+  FastAPI still sees the route function; `functools.wraps` sets `__wrapped__`, which is what lets
+  FastAPI's `inspect.signature` call resolve the real parameters through the wrapper. The wrapper
+  is **sync-only** — every endpoint here is a plain `def`. An `async def` endpoint would return a
+  coroutine that escapes the `try` unawaited and its exceptions would sail past the mapping; give
+  it its own async wrapper rather than assuming this one covers it.
 - Tasks have a real, stable unique ID assigned once at creation, exposed over the API as
   `"KAN-01"`, `"KAN-02"`, ... (`storage._display_id(pk)` / `storage._parse_id(task_id)` convert
   between the display string and the real integer primary key). **IDs are never reused** — this
