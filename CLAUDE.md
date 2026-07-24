@@ -20,7 +20,15 @@ key for what's proposed/in-progress/shipped/shelved.
   `update_task`, `move_task`, `delete_task`, `get_trash`, `restore_task`,
   `permanent_delete_task`, `empty_trash`. Each function opens its own `Session` via `_session()`
   (which lazily creates the engine/DB file and runs `create_all` — cheap and idempotent, fine for
-  a local single-user app; don't bother caching the engine).
+  a local single-user app; don't bother caching the engine). The recurring lifecycle conditions
+  are centralized as filter-predicate helpers returning tuples meant to be splatted into a query:
+  `_active_task_filters()` (board-visible: neither trashed nor archived), `_not_trashed_filters()`,
+  `_trashed_task_filters()`, `_archived_task_filters()`, plus `_active_sprint_row(session)` /
+  `_planned_sprint_row(session)` for the at-most-one-active/planned lookups. Use these rather than
+  re-inlining `Task.deleted_at.is_(None)` etc. — the point is that "what counts as active" has one
+  definition. Nullable timestamp columns serialize through `_utc_isoformat_or_none` (datetimes,
+  which need the tzinfo re-attached — see the SQLite gotcha below) or `_date_isoformat_or_none`
+  (plain `Date` columns, which don't).
 - `backend/schemas.py` — Pydantic request/response models (`TaskCreate`, `TaskMove`,
   `TaskPriorityUpdate`, `TaskOut`, `TrashedTaskOut`, etc.), imported by `main.py` and wired up via
   FastAPI's `response_model=` on every endpoint — this is what actually validates/shapes what the
