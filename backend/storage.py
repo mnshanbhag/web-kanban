@@ -187,14 +187,48 @@ def _get_archived_task(session: Session, task_id: str) -> Task:
     return task
 
 
+# --- Task lifecycle filter predicates ---------------------------------------
+# The same deleted_at/archived_at conditions recur across nearly every query.
+# These return tuples of SQLAlchemy criteria meant to be splatted into
+# .filter(*_active_task_filters(), ...); ANDing is commutative, so the row set
+# is identical regardless of where these land relative to other predicates.
+
+
+def _not_trashed_filters() -> tuple:
+    """deleted_at IS NULL — excludes soft-deleted (trashed) tasks."""
+    return (Task.deleted_at.is_(None),)
+
+
+def _active_task_filters() -> tuple:
+    """Board-visible tasks: neither trashed nor archived."""
+    return _not_trashed_filters() + (Task.archived_at.is_(None),)
+
+
+def _trashed_task_filters() -> tuple:
+    """deleted_at IS NOT NULL — only soft-deleted (trashed) tasks."""
+    return (Task.deleted_at.isnot(None),)
+
+
+def _archived_task_filters() -> tuple:
+    """archived_at IS NOT NULL — only archived tasks."""
+    return (Task.archived_at.isnot(None),)
+
+
+def _active_sprint_row(session: Session) -> Optional["Sprint"]:
+    return session.query(Sprint).filter(Sprint.status == SPRINT_STATUS_ACTIVE).first()
+
+
+def _planned_sprint_row(session: Session) -> Optional["Sprint"]:
+    return session.query(Sprint).filter(Sprint.status == SPRINT_STATUS_PLANNED).first()
+
+
 def _assert_title_available(
     session: Session, column: str, title: str, exclude_id: Optional[int] = None
 ) -> None:
     query = session.query(Task).filter(
         Task.column == column,
         Task.title == title,
-        Task.deleted_at.is_(None),
-        Task.archived_at.is_(None),
+        *_active_task_filters(),
     )
     if exclude_id is not None:
         query = query.filter(Task.id != exclude_id)
@@ -218,11 +252,22 @@ def _task_to_dict(session: Session, task: Task) -> dict:
         "priority": task.priority,
         "blocked_by": _display_id(task.blocked_by_id) if task.blocked_by_id else None,
         "blocks": [_display_id(t.id) for t in task.blocks if t.deleted_at is None],
-        "due_date": _utc_isoformat(task.due_date) if task.due_date is not None else None,
+        "due_date": _utc_isoformat_or_none(task.due_date),
         "subtask_total": subtask_total,
         "subtask_done": subtask_done,
-        "updated_at": _utc_isoformat(task.updated_at) if task.updated_at is not None else None,
+        "updated_at": _utc_isoformat_or_none(task.updated_at),
         "sprint_id": task.sprint_id,
+    }
+
+
+def _task_summary_dict(task: Task) -> dict:
+    """The id/title/description/priority fields shared by the trash and archive
+    listings (which each append their own lifecycle timestamp)."""
+    return {
+        "id": _display_id(task.id),
+        "title": task.title,
+        "description": task.description,
+        "priority": task.priority,
     }
 
 
@@ -230,7 +275,7 @@ def get_all_boards() -> dict[str, list[dict]]:
     with _session() as session:
         tasks = (
             session.query(Task)
-            .filter(Task.deleted_at.is_(None), Task.archived_at.is_(None))
+            .filter(*_active_task_filters())
             .order_by(Task.column, Task.title)
             .all()
         )
@@ -261,9 +306,7 @@ def add_task(
 
         parsed_due_date = datetime.fromisoformat(due_date) if due_date else None
 
-        active_sprint = (
-            session.query(Sprint).filter(Sprint.status == SPRINT_STATUS_ACTIVE).first()
-        )
+        active_sprint = _active_sprint_row(session)
 
         task = Task(
             title=title,
@@ -349,7 +392,7 @@ def move_task(task_id: str, to_column: str) -> None:
         if to_column == DONE_COLUMN:
             dependents = (
                 session.query(Task)
-                .filter(Task.blocked_by_id == task.id, Task.deleted_at.is_(None))
+                .filter(Task.blocked_by_id == task.id, *_not_trashed_filters())
                 .all()
             )
             for dependent in dependents:
@@ -384,20 +427,27 @@ def _utc_isoformat(dt: datetime) -> str:
     return dt.isoformat()
 
 
+def _utc_isoformat_or_none(dt: Optional[datetime]) -> Optional[str]:
+    """`_utc_isoformat` for nullable datetime columns, passing NULL through as None."""
+    return _utc_isoformat(dt) if dt is not None else None
+
+
+def _date_isoformat_or_none(value: Optional[date]) -> Optional[str]:
+    """Plain `date.isoformat()` for nullable Date columns (no tzinfo, unlike datetimes)."""
+    return value.isoformat() if value is not None else None
+
+
 def get_trash() -> list[dict]:
     with _session() as session:
         tasks = (
             session.query(Task)
-            .filter(Task.deleted_at.isnot(None))
+            .filter(*_trashed_task_filters())
             .order_by(Task.deleted_at.desc())
             .all()
         )
         return [
             {
-                "id": _display_id(t.id),
-                "title": t.title,
-                "description": t.description,
-                "priority": t.priority,
+                **_task_summary_dict(t),
                 "deleted_from": t.column,
                 "deleted_at": _utc_isoformat(t.deleted_at),
             }
@@ -430,7 +480,7 @@ def permanent_delete_task(task_id: str) -> None:
 
 def empty_trash() -> int:
     with _session() as session:
-        trashed = session.query(Task).filter(Task.deleted_at.isnot(None)).all()
+        trashed = session.query(Task).filter(*_trashed_task_filters()).all()
         count = len(trashed)
         for task in trashed:
             session.delete(task)
@@ -575,11 +625,7 @@ def archive_all_done() -> int:
     with _session() as session:
         tasks = (
             session.query(Task)
-            .filter(
-                Task.column == DONE_COLUMN,
-                Task.deleted_at.is_(None),
-                Task.archived_at.is_(None),
-            )
+            .filter(Task.column == DONE_COLUMN, *_active_task_filters())
             .all()
         )
         now = datetime.now(timezone.utc)
@@ -608,16 +654,13 @@ def get_archive() -> list[dict]:
     with _session() as session:
         tasks = (
             session.query(Task)
-            .filter(Task.archived_at.isnot(None))
+            .filter(*_archived_task_filters())
             .order_by(Task.archived_at.desc())
             .all()
         )
         return [
             {
-                "id": _display_id(t.id),
-                "title": t.title,
-                "description": t.description,
-                "priority": t.priority,
+                **_task_summary_dict(t),
                 "archived_at": _utc_isoformat(t.archived_at),
             }
             for t in tasks
@@ -637,11 +680,11 @@ def _sprint_to_dict(sprint: Sprint) -> dict:
     return {
         "id": sprint.id,
         "name": sprint.name,
-        "start_date": sprint.start_date.isoformat() if sprint.start_date is not None else None,
-        "end_date": sprint.end_date.isoformat() if sprint.end_date is not None else None,
+        "start_date": _date_isoformat_or_none(sprint.start_date),
+        "end_date": _date_isoformat_or_none(sprint.end_date),
         "duration_weeks": sprint.duration_weeks,
         "status": sprint.status,
-        "closed_at": _utc_isoformat(sprint.closed_at) if sprint.closed_at is not None else None,
+        "closed_at": _utc_isoformat_or_none(sprint.closed_at),
     }
 
 
@@ -666,9 +709,7 @@ def get_all_sprints() -> list[dict]:
 
 def get_active_sprint() -> Optional[dict]:
     with _session() as session:
-        sprint = (
-            session.query(Sprint).filter(Sprint.status == SPRINT_STATUS_ACTIVE).first()
-        )
+        sprint = _active_sprint_row(session)
         return _sprint_to_dict(sprint) if sprint is not None else None
 
 
@@ -686,9 +727,7 @@ def start_sprint(name: str, duration_weeks: int) -> dict:
     duration_weeks = _validate_sprint_duration(duration_weeks)
 
     with _session() as session:
-        existing = (
-            session.query(Sprint).filter(Sprint.status == SPRINT_STATUS_ACTIVE).first()
-        )
+        existing = _active_sprint_row(session)
         if existing is not None:
             raise ValueError("A sprint is already active")
         _assert_sprint_name_available(session, name)
@@ -706,8 +745,7 @@ def start_sprint(name: str, duration_weeks: int) -> dict:
             .filter(
                 Task.sprint_id.is_(None),
                 Task.column != DONE_COLUMN,
-                Task.deleted_at.is_(None),
-                Task.archived_at.is_(None),
+                *_active_task_filters(),
             )
             .all()
         )
@@ -721,9 +759,7 @@ def start_sprint(name: str, duration_weeks: int) -> dict:
 
 def get_planned_sprint() -> Optional[dict]:
     with _session() as session:
-        sprint = (
-            session.query(Sprint).filter(Sprint.status == SPRINT_STATUS_PLANNED).first()
-        )
+        sprint = _planned_sprint_row(session)
         return _sprint_to_dict(sprint) if sprint is not None else None
 
 
@@ -740,15 +776,11 @@ def plan_next_sprint(name: str, duration_weeks: int) -> dict:
     duration_weeks = _validate_sprint_duration(duration_weeks)
 
     with _session() as session:
-        active = (
-            session.query(Sprint).filter(Sprint.status == SPRINT_STATUS_ACTIVE).first()
-        )
+        active = _active_sprint_row(session)
         if active is None:
             raise ValueError("Cannot plan a next sprint while no sprint is active")
 
-        existing = (
-            session.query(Sprint).filter(Sprint.status == SPRINT_STATUS_PLANNED).first()
-        )
+        existing = _planned_sprint_row(session)
         if existing is not None:
             raise ValueError("A sprint is already planned")
         _assert_sprint_name_available(session, name)
@@ -789,15 +821,11 @@ def end_sprint(next_name: Optional[str] = None, next_duration_weeks: Optional[in
     joins.
     """
     with _session() as session:
-        sprint = (
-            session.query(Sprint).filter(Sprint.status == SPRINT_STATUS_ACTIVE).first()
-        )
+        sprint = _active_sprint_row(session)
         if sprint is None:
             raise ValueError("No sprint is currently active")
 
-        planned = (
-            session.query(Sprint).filter(Sprint.status == SPRINT_STATUS_PLANNED).first()
-        )
+        planned = _planned_sprint_row(session)
 
         start = date.today()
 
@@ -834,7 +862,7 @@ def end_sprint(next_name: Optional[str] = None, next_duration_weeks: Optional[in
             .filter(
                 Task.sprint_id == sprint.id,
                 Task.column != DONE_COLUMN,
-                Task.deleted_at.is_(None),
+                *_not_trashed_filters(),
             )
             .all()
         )
@@ -846,8 +874,7 @@ def end_sprint(next_name: Optional[str] = None, next_duration_weeks: Optional[in
             .filter(
                 Task.sprint_id.is_(None),
                 Task.column != DONE_COLUMN,
-                Task.deleted_at.is_(None),
-                Task.archived_at.is_(None),
+                *_active_task_filters(),
             )
             .all()
         )
@@ -884,15 +911,9 @@ def import_data(payload: dict) -> dict:
             raise ValueError("Import file contains more than one active sprint")
         if len(planned_in_file) > 1:
             raise ValueError("Import file contains more than one planned sprint")
-        if active_in_file and (
-            session.query(Sprint).filter(Sprint.status == SPRINT_STATUS_ACTIVE).first()
-            is not None
-        ):
+        if active_in_file and _active_sprint_row(session) is not None:
             raise ValueError("An active sprint already exists")
-        if planned_in_file and (
-            session.query(Sprint).filter(Sprint.status == SPRINT_STATUS_PLANNED).first()
-            is not None
-        ):
+        if planned_in_file and _planned_sprint_row(session) is not None:
             raise ValueError("A sprint is already planned")
 
         sprint_id_map: dict[int, int] = {}
@@ -1005,7 +1026,7 @@ def get_past_sprints() -> list[dict]:
                 .filter(
                     Task.sprint_id == sprint.id,
                     Task.column == DONE_COLUMN,
-                    Task.deleted_at.is_(None),
+                    *_not_trashed_filters(),
                 )
                 .order_by(Task.title)
                 .all()
